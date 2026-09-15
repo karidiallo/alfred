@@ -83,3 +83,56 @@ export async function getActiveMemories(
 
   return data ?? [];
 }
+
+// --------------------------------------------------
+// CURRENT STATE
+// --------------------------------------------------
+
+export async function setCurrentState(
+  key: string,
+  value: unknown,
+  source = "alfred",
+  confidence = 1
+) {
+  const { data, error } = await supabase
+    .from("current_state")
+    .upsert(
+      {
+        key,
+        value,
+        source,
+        confidence,
+        updated_at: new Date().toISOString()
+      },
+      {
+        onConflict: "key"
+      }
+    )
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(
+      `Nie udało się zaktualizować current state: ${error.message}`
+    );
+  }
+
+  return data;
+}
+
+export async function getCurrentState() {
+  const { data, error } = await supabase
+    .from("current_state")
+    .select("*")
+    .order("updated_at", {
+      ascending: false
+    });
+
+  if (error) {
+    throw new Error(
+      `Nie udało się pobrać current state: ${error.message}`
+    );
+  }
+
+  return data ?? [];
+}
