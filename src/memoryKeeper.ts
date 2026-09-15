@@ -1,3 +1,7 @@
+import {
+  mergeCurrentState
+} from "./stateMutations.js";
+
 import "dotenv/config";
 
 import OpenAI from "openai";
@@ -5,7 +9,6 @@ import OpenAI from "openai";
 import {
   saveMemory,
   saveProfileItem,
-  setCurrentState,
 
   saveDecision,
 
@@ -1244,7 +1247,7 @@ Prefer storing nothing over storing noise.
     }
 
 
-    await setCurrentState(
+    await mergeCurrentState(
 
       state.key,
 
