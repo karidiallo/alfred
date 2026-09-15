@@ -1,3 +1,8 @@
+import {
+  runMorningLoop,
+  runEveningLoop
+} from "./dailyLoop.js";
+
 import "dotenv/config";
 
 import OpenAI from "openai";
@@ -195,6 +200,27 @@ export async function askAlfred(
   userMessage: string
 ): Promise<string> {
 
+  const command =
+    userMessage
+      .trim()
+      .toLowerCase();
+
+
+  if (
+    command === "/morning"
+  ) {
+
+    return runMorningLoop();
+  }
+
+
+  if (
+    command === "/evening"
+  ) {
+
+    return runEveningLoop();
+  }
+  
   const cleanMessage =
     userMessage.trim();
 
