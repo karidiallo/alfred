@@ -136,3 +136,66 @@ export async function getCurrentState() {
 
   return data ?? [];
 }
+
+// --------------------------------------------------
+// DECISIONS
+// --------------------------------------------------
+
+export async function saveDecision(input: {
+  title: string;
+  decision: string;
+  rationale?: string;
+  review_condition?: string;
+}) {
+  const { data, error } = await supabase
+    .from("decisions")
+    .insert({
+      title: input.title,
+      decision: input.decision,
+      rationale: input.rationale ?? null,
+      review_condition: input.review_condition ?? null,
+      status: "active"
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(
+      `Nie udało się zapisać decyzji: ${error.message}`
+    );
+  }
+
+  return data;
+}
+
+
+// --------------------------------------------------
+// OBJECTIVES
+// --------------------------------------------------
+
+export async function saveObjective(input: {
+  kind: "goal" | "project" | "commitment" | "task";
+  title: string;
+  description?: string;
+  priority?: number;
+}) {
+  const { data, error } = await supabase
+    .from("objectives")
+    .insert({
+      kind: input.kind,
+      title: input.title,
+      description: input.description ?? null,
+      priority: input.priority ?? 3,
+      status: "active"
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(
+      `Nie udało się zapisać objective: ${error.message}`
+    );
+  }
+
+  return data;
+}

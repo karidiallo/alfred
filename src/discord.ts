@@ -7,11 +7,17 @@ import {
 } from "discord.js";
 
 import { askAlfred } from "./openai.js";
+import { runMemoryKeeper } from "./memoryKeeper.js";
 
 const sleep = (ms: number) =>
   new Promise(resolve => setTimeout(resolve, ms));
 
 let activeClient: Client | null = null;
+
+
+// --------------------------------------------------
+// CREATE DISCORD CLIENT
+// --------------------------------------------------
 
 function createClient() {
   const client = new Client({
@@ -24,94 +30,200 @@ function createClient() {
     partials: [Partials.Channel]
   });
 
+
+  // ------------------------------------------------
+  // READY
+  // ------------------------------------------------
+
   client.once(Events.ClientReady, readyClient => {
-    console.log(`✅ Alfred online jako ${readyClient.user.tag}`);
+    console.log(
+      `✅ Alfred online jako ${readyClient.user.tag}`
+    );
   });
 
+
+  // ------------------------------------------------
+  // ERRORS
+  // ------------------------------------------------
+
   client.on(Events.Error, error => {
-    console.error("Discord client error:", error);
+    console.error(
+      "Discord client error:",
+      error
+    );
   });
 
   client.on(Events.ShardError, error => {
-    console.error("Discord shard error:", error);
+    console.error(
+      "Discord shard error:",
+      error
+    );
   });
 
-  client.on(Events.MessageCreate, async message => {
-    if (!shouldRespond(message, client)) return;
 
-    const input = cleanMessage(message, client);
+  // ------------------------------------------------
+  // MESSAGE HANDLER
+  // ------------------------------------------------
 
-    if (!input) return;
+  client.on(
+    Events.MessageCreate,
+    async message => {
 
-    try {
-      await message.channel.sendTyping();
+      if (!shouldRespond(message, client)) {
+        return;
+      }
 
-      const conversationId = message.guild
-        ? `guild:${message.guild.id}:channel:${message.channel.id}`
-        : `dm:${message.author.id}`;
+      const input =
+        cleanMessage(message, client);
 
-      const answer = await askAlfred(
-        conversationId,
-        input
-      );
+      if (!input) {
+        return;
+      }
 
-      for (const chunk of splitDiscordMessage(answer)) {
+      try {
+        await message.channel.sendTyping();
+
+
+        // --------------------------------------------
+        // Conversation ID
+        // --------------------------------------------
+
+        const conversationId =
+          message.guild
+            ? `guild:${message.guild.id}:channel:${message.channel.id}`
+            : `dm:${message.author.id}`;
+
+
+        // --------------------------------------------
+        // MAIN ALFRED RESPONSE
+        // --------------------------------------------
+
+        const answer =
+          await askAlfred(
+            conversationId,
+            input
+          );
+
+
+        // --------------------------------------------
+        // SEND RESPONSE TO DISCORD
+        // --------------------------------------------
+
+        for (
+          const chunk of
+          splitDiscordMessage(answer)
+        ) {
+          await message.reply({
+            content: chunk,
+
+            allowedMentions: {
+              repliedUser: false
+            }
+          });
+        }
+
+
+        // --------------------------------------------
+        // MEMORY KEEPER
+        // --------------------------------------------
+        //
+        // Działa PO odpowiedzi Alfreda.
+        //
+        // Nie blokuje rozmowy.
+        // Analizuje wiadomość Kari
+        // i może zapisać:
+        //
+        // - memory
+        // - current state
+        // - decision
+        // - objective
+        //
+        // do Supabase.
+        // --------------------------------------------
+
+        void runMemoryKeeper(input)
+          .catch(error => {
+            console.error(
+              "Memory Keeper error:",
+              error
+            );
+          });
+
+      } catch (error) {
+
+        console.error(
+          "Alfred error:",
+          error
+        );
+
         await message.reply({
-          content: chunk,
+          content:
+            "Mam błąd po swojej stronie. Sprawdź terminal Alfreda — tam będzie dokładny log.",
+
           allowedMentions: {
             repliedUser: false
           }
         });
       }
-    } catch (error) {
-      console.error("Alfred error:", error);
-
-      await message.reply({
-        content:
-          "Mam błąd po swojej stronie. Sprawdź terminal Alfreda — tam będzie dokładny log.",
-        allowedMentions: {
-          repliedUser: false
-        }
-      });
     }
-  });
+  );
 
   return client;
 }
 
-/**
- * Decyduje, kiedy Alfred ma odpowiedzieć.
- *
- * 1. Ignoruje boty.
- * 2. W DM odpowiada zawsze.
- * 3. Na kanale #alfred odpowiada zawsze.
- * 4. Jeśli później ustawimy DISCORD_CHANNEL_ID,
- *    ten kanał też będzie traktowany jako dedykowany.
- * 5. Na innych kanałach odpowiada tylko po @Alfred.
- */
+
+// --------------------------------------------------
+// SHOULD ALFRED RESPOND?
+// --------------------------------------------------
+
 function shouldRespond(
   message: Message,
   client: Client
 ): boolean {
-  if (message.author.bot) return false;
 
-  // Prywatna wiadomość do Alfreda
+  // Ignorujemy wiadomości innych botów
+  if (message.author.bot) {
+    return false;
+  }
+
+
+  // -----------------------------------------------
+  // DM
+  // -----------------------------------------------
+
+  // W prywatnych wiadomościach
+  // Alfred odpowiada zawsze.
+
   if (!message.guild) {
     return true;
   }
 
-  // Jeśli kiedyś ustawimy konkretny ID kanału
+
+  // -----------------------------------------------
+  // DEDICATED CHANNEL ID
+  // -----------------------------------------------
+
   const dedicatedChannelId =
-    process.env.DISCORD_CHANNEL_ID?.trim();
+    process.env
+      .DISCORD_CHANNEL_ID
+      ?.trim();
 
   if (
     dedicatedChannelId &&
-    message.channel.id === dedicatedChannelId
+    message.channel.id ===
+      dedicatedChannelId
   ) {
     return true;
   }
 
-  // Nasz kanał #alfred
+
+  // -----------------------------------------------
+  // #alfred
+  // -----------------------------------------------
+
+  // Na naszym kanale #alfred
+  // nie trzeba pisać @Alfred.
+
   if (
     "name" in message.channel &&
     message.channel.name === "alfred"
@@ -119,62 +231,96 @@ function shouldRespond(
     return true;
   }
 
-  // Na pozostałych kanałach Alfred reaguje po oznaczeniu
+
+  // -----------------------------------------------
+  // OTHER CHANNELS
+  // -----------------------------------------------
+
+  // Na pozostałych kanałach
+  // Alfred reaguje tylko po oznaczeniu.
+
   return Boolean(
     client.user &&
-    message.mentions.has(client.user)
+    message.mentions.has(
+      client.user
+    )
   );
 }
 
-/**
- * Usuwa @Alfred z wiadomości,
- * żeby model dostał czysty tekst.
- */
+
+// --------------------------------------------------
+// CLEAN MESSAGE
+// --------------------------------------------------
+
 function cleanMessage(
   message: Message,
   client: Client
 ): string {
-  let content = message.content;
+
+  let content =
+    message.content;
+
+  // Usuwamy @Alfred z tekstu,
+  // zanim wiadomość trafi do modelu.
 
   if (client.user) {
-    content = content.replace(
-      new RegExp(
-        `<@!?${client.user.id}>`,
-        "g"
-      ),
-      ""
-    );
+
+    content =
+      content.replace(
+        new RegExp(
+          `<@!?${client.user.id}>`,
+          "g"
+        ),
+        ""
+      );
   }
 
   return content.trim();
 }
 
-/**
- * Discord ma limit długości wiadomości.
- * Dłuższe odpowiedzi Alfreda dzielimy
- * na kilka części.
- */
+
+// --------------------------------------------------
+// SPLIT LONG DISCORD MESSAGES
+// --------------------------------------------------
+
 function splitDiscordMessage(
   text: string,
   max = 1900
 ): string[] {
+
   if (text.length <= max) {
     return [text];
   }
 
   const chunks: string[] = [];
-  let remaining = text;
 
-  while (remaining.length > max) {
+  let remaining =
+    text;
+
+  while (
+    remaining.length > max
+  ) {
+
     let cut =
-      remaining.lastIndexOf("\n", max);
+      remaining.lastIndexOf(
+        "\n",
+        max
+      );
 
-    if (cut < max * 0.5) {
+    if (
+      cut < max * 0.5
+    ) {
+
       cut =
-        remaining.lastIndexOf(" ", max);
+        remaining.lastIndexOf(
+          " ",
+          max
+        );
     }
 
-    if (cut < max * 0.5) {
+    if (
+      cut < max * 0.5
+    ) {
       cut = max;
     }
 
@@ -191,56 +337,91 @@ function splitDiscordMessage(
   }
 
   if (remaining) {
-    chunks.push(remaining);
+    chunks.push(
+      remaining
+    );
   }
 
   return chunks;
 }
 
+
+// --------------------------------------------------
+// DISCORD GATEWAY PATCH
+// --------------------------------------------------
+
 /**
- * Discord.js standardowo pobiera /gateway/bot
+ * discord.js standardowo pobiera:
+ *
+ * GET /gateway/bot
+ *
  * przez @discordjs/rest.
  *
- * W naszym Codespace Discord czasami zwracał
- * tam losowe 500/503.
+ * W naszym Codespace Discord
+ * czasami zwracał tam losowe:
+ *
+ * 500
+ * 503
  *
  * Native fetch działał poprawnie,
- * dlatego dla tego jednego endpointu
- * robimy własny request z retry.
+ * dlatego tylko dla tego endpointu
+ * robimy własny request + retry.
  */
+
 function patchGatewayRequest(
   client: Client,
   token: string
 ) {
-  const rest = client.rest as any;
+
+  const rest =
+    client.rest as any;
 
   const originalGet =
     rest.get.bind(rest);
+
 
   rest.get = async (
     route: any,
     options?: any
   ) => {
+
     const routeString =
       String(route);
 
-    // Wszystkie inne requesty Discorda
-    // działają normalnie przez discord.js
-    if (routeString !== "/gateway/bot") {
+
+    // ---------------------------------------------
+    // Wszystkie inne Discord API requests
+    // działają normalnie.
+    // ---------------------------------------------
+
+    if (
+      routeString !==
+      "/gateway/bot"
+    ) {
+
       return originalGet(
         route,
         options
       );
     }
 
-    let lastError: unknown;
+
+    // ---------------------------------------------
+    // /gateway/bot
+    // ---------------------------------------------
+
+    let lastError:
+      unknown;
+
 
     for (
       let attempt = 1;
       attempt <= 8;
       attempt++
     ) {
+
       try {
+
         const response =
           await fetch(
             "https://discord.com/api/v10/gateway/bot",
@@ -252,7 +433,9 @@ function patchGatewayRequest(
             }
           );
 
+
         if (response.ok) {
+
           console.log(
             `✅ Discord gateway info OK — próba ${attempt}`
           );
@@ -260,26 +443,34 @@ function patchGatewayRequest(
           return await response.json();
         }
 
+
         lastError =
           new Error(
             `Discord gateway HTTP ${response.status}`
           );
 
+
         console.warn(
           `⚠️ Discord gateway HTTP ${response.status} — próba ${attempt}/8`
         );
+
       } catch (error) {
-        lastError = error;
+
+        lastError =
+          error;
+
 
         console.warn(
           `⚠️ Discord gateway fetch error — próba ${attempt}/8`
         );
       }
 
+
       await sleep(
         attempt * 3000
       );
     }
+
 
     throw (
       lastError ??
@@ -290,70 +481,98 @@ function patchGatewayRequest(
   };
 }
 
-/**
- * Startuje Alfreda.
- *
- * Jeśli Discord chwilowo zwraca błąd,
- * Alfred próbuje ponownie zamiast
- * od razu się wyłączyć.
- */
+
+// --------------------------------------------------
+// START DISCORD BOT
+// --------------------------------------------------
+
 export async function startDiscordBot() {
+
   const token =
     process.env
       .DISCORD_BOT_TOKEN
       ?.trim();
 
+
   if (!token) {
+
     throw new Error(
       "Brak DISCORD_BOT_TOKEN w .env"
     );
   }
+
 
   for (
     let attempt = 1;
     attempt <= 10;
     attempt++
   ) {
+
     console.log(
       `Łączenie Alfreda z Discordem — próba ${attempt}/10`
     );
 
+
     const client =
       createClient();
+
 
     patchGatewayRequest(
       client,
       token
     );
 
-    try {
-      await client.login(token);
 
-      activeClient = client;
+    try {
+
+      await client.login(
+        token
+      );
+
+
+      activeClient =
+        client;
+
 
       return;
+
     } catch (error) {
+
       console.error(
         `Discord login nieudany — próba ${attempt}/10`
       );
 
-      console.error(error);
+      console.error(
+        error
+      );
+
 
       try {
+
         await client.destroy();
+
       } catch {
+
         // ignorujemy błąd cleanup
+
       }
 
-      if (attempt < 10) {
+
+      if (
+        attempt < 10
+      ) {
+
         console.log(
           "Ponawiam za 15 sekund..."
         );
 
-        await sleep(15000);
+        await sleep(
+          15000
+        );
       }
     }
   }
+
 
   throw new Error(
     "Alfred nie połączył się z Discordem po 10 próbach."
