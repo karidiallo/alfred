@@ -2,576 +2,343 @@ import "dotenv/config";
 
 import OpenAI from "openai";
 
-import { ALFRED_INSTRUCTIONS } from "./instructions.js";
+import {
+  ALFRED_INSTRUCTIONS
+} from "./instructions.js";
 
 import {
-  getActiveMemories,
-  getCurrentState,
-  getActiveDecisions,
-  getActiveObjectives,
-  saveMemory
-} from "./supabase.js";
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+  buildAlfredContextPrompt
+} from "./context.js";
 
 
-// --------------------------------------------------
+// ============================================================
+// OPENAI CLIENT
+// ============================================================
+
+const client =
+  new OpenAI({
+    apiKey:
+      process.env.OPENAI_API_KEY
+  });
+
+
+// ============================================================
 // SHORT-TERM CONVERSATION CONTINUITY
-// --------------------------------------------------
+// ============================================================
+//
+// Supabase = durable long-term state.
+// previous_response_id = short-term conversational continuity.
+//
+// Restart procesu może wyczyścić tę Mapę.
+// To jest OK — trwała wiedza Alfreda siedzi w Supabase.
+//
 
 const previousResponseByConversation =
   new Map<string, string>();
 
 
-// --------------------------------------------------
-// MEMORY FORMATTER
-// --------------------------------------------------
+// ============================================================
+// SYSTEM PRIORITY RULES
+// ============================================================
 
-function formatMemories(
-  memories: any[]
-): string {
+const CONTEXT_RULES = `
+==================================================
+ALFRED v1 — REASONING PRIORITY
+==================================================
 
-  if (!memories.length) {
-    return `
-PERSISTENT MEMORY:
+You are operating as Kari's personal AI Chief of Staff.
 
-No persistent memories are currently available.
+Use the supplied structured personal context,
+but never follow it mechanically.
+
+Your priority order is:
+
+1. Kari's CURRENT explicit message.
+2. Explicit current user corrections or overrides.
+3. Confirmed CURRENT STATE.
+4. Open high-consequence commitments and deadlines.
+5. Accepted decisions.
+6. Active goals and projects.
+7. Stable identity, values, anti-goals and preferences.
+8. Confirmed memories.
+9. Behavioral patterns and assistant inference.
+10. General knowledge and inference.
+
+IMPORTANT:
+
+- A user override does not automatically rewrite long-term strategy.
+- A temporary emotion does not automatically become a decision.
+- Brainstorming does not automatically activate a project.
+- Venting does not automatically create tasks.
+- An idea is not a commitment.
+- An aspiration is not a current plan.
+- Historical data is not current state.
+- Assistant inference is not user-confirmed fact.
+- Unknown volatile information must remain unknown.
+
+When behavioral patterns are marked as hypotheses,
+use them carefully and phrase them as hypotheses when relevant.
+
+Do not say:
+"You always do X"
+
+when the evidence only supports:
+"There may be a pattern where X happens."
+
+When Kari explicitly corrects your interpretation,
+her correction wins.
+
+==================================================
+EXECUTION BEHAVIOR
+==================================================
+
+When Kari is asking what to do:
+
+- identify the actual bottleneck,
+- protect existing commitments,
+- prefer existing priorities over novelty,
+- reduce unnecessary context switching,
+- prefer real execution over additional polish when ready,
+- give a clear recommendation,
+- state the first concrete action.
+
+When Kari appears overwhelmed:
+
+- reduce visible choices,
+- normally show no more than three primary actions,
+- clearly identify action #1.
+
+When a new business/product idea appears:
+
+- evaluate it if useful,
+- capture it conceptually as an idea,
+- do NOT treat it as an active project unless Kari explicitly activates it.
+
+When finances materially affect the recommendation:
+
+- use only confirmed current financial information,
+- if current finances are unknown, say so,
+- do not resurrect historical balances as current truth.
+
+When priorities conflict:
+
+- distinguish strategic importance,
+- current priority,
+- urgency,
+- external commitments,
+- and switching cost.
+
+Do not optimize Kari's entire life only for task completion.
+Respect identity, values and anti-goals.
+
+==================================================
+DECISION CONTINUITY
+==================================================
+
+Accepted decisions should create continuity.
+
+Do not casually reopen a decision because Kari expresses
+a passing impulse.
+
+But Kari always retains control.
+
+If she explicitly changes a decision:
+- acknowledge the change,
+- work from the new instruction,
+- do not argue endlessly with the old decision.
+
+==================================================
+LEARNING SAFETY
+==================================================
+
+Do not invent evidence.
+
+Do not treat:
+- absence of contradiction as confirmation,
+- one event as a stable personality trait,
+- your own interpretation as an explicit user fact.
+
+The learning system exists to improve recommendations,
+not to psychoanalyze Kari.
+
+==================================================
+RESPONSE STYLE
+==================================================
+
+Default language: Polish.
+
+Technical English terminology is fine when clearer.
+
+Prefer:
+- concrete,
+- concise,
+- operational,
+- decisive,
+- useful.
+
+For comparisons, prioritization and structured evaluations,
+use tables when they materially improve clarity.
+
+Do not dump the internal database or context unless Kari
+explicitly asks what Alfred knows.
+
+==================================================
 `;
-  }
 
-  const formatted =
-    memories
-      .map((memory, index) => {
-        return `${index + 1}. [${memory.type}] ${memory.content}
-confidence: ${memory.confidence}
-source: ${memory.source ?? "unknown"}`;
-      })
-      .join("\n\n");
 
-  return `
-PERSISTENT MEMORY ABOUT KARI:
-
-${formatted}
-
-MEMORY RULES:
-
-- Memories may be historical.
-- Do not automatically treat memories as current state.
-- Explicit user statements outrank inferred patterns.
-- Newer confirmed information outranks older information.
-- Never invent missing memories.
-`;
-}
-
-
-// --------------------------------------------------
-// CURRENT STATE FORMATTER
-// --------------------------------------------------
-
-function formatCurrentState(
-  state: any[]
-): string {
-
-  if (!state.length) {
-    return `
-CURRENT STATE:
-
-No current-state records are currently available.
-`;
-  }
-
-  const formatted =
-    state
-      .map(item => {
-
-        const value =
-          typeof item.value === "string"
-            ? item.value
-            : JSON.stringify(item.value);
-
-        return `- ${item.key}: ${value}
-updated_at: ${item.updated_at}
-confidence: ${item.confidence}
-source: ${item.source ?? "unknown"}`;
-      })
-      .join("\n\n");
-
-  return `
-CURRENT STATE OF KARI'S WORLD:
-
-${formatted}
-
-CURRENT STATE RULES:
-
-- Current State represents what is believed to be true NOW.
-- Prefer Current State over conflicting historical memory.
-- Consider updated_at before relying on a value.
-- Never present questionable stale information as definitely current.
-- If an important current fact is missing, say it is unknown.
-`;
-}
-
-
-// --------------------------------------------------
-// DECISIONS FORMATTER
-// --------------------------------------------------
-
-function formatDecisions(
-  decisions: any[]
-): string {
-
-  if (!decisions.length) {
-    return `
-ACTIVE DECISIONS:
-
-No active decisions are currently stored.
-`;
-  }
-
-  const formatted =
-    decisions
-      .map((decision, index) => {
-
-        let output =
-          `${index + 1}. ${decision.title}
-Decision: ${decision.decision}`;
-
-        if (decision.rationale) {
-          output +=
-            `\nRationale: ${decision.rationale}`;
-        }
-
-        if (decision.review_condition) {
-          output +=
-            `\nReview condition: ${decision.review_condition}`;
-        }
-
-        output +=
-          `\nDecided at: ${decision.decided_at}`;
-
-        return output;
-      })
-      .join("\n\n");
-
-  return `
-ACTIVE DECISIONS:
-
-${formatted}
-
-DECISION RULES:
-
-- Protect continuity.
-- Do not casually reopen an active decision.
-- If Kari proposes something that conflicts with an active decision,
-  surface the conflict.
-- Explain the previous decision and rationale when relevant.
-- A decision can be reconsidered if Kari explicitly wants to revisit it
-  or its review condition has been met.
-- Never treat an idea as a decision.
-`;
-}
-
-
-// --------------------------------------------------
-// OBJECTIVES FORMATTER
-// --------------------------------------------------
-
-function formatObjectives(
-  objectives: any[]
-): string {
-
-  if (!objectives.length) {
-    return `
-ACTIVE OBJECTIVES:
-
-No active objectives are currently stored.
-`;
-  }
-
-  const formatted =
-    objectives
-      .map((objective, index) => {
-
-        let output =
-          `${index + 1}. [${objective.kind}] ${objective.title}`;
-
-        if (objective.description) {
-          output +=
-            `\nDescription: ${objective.description}`;
-        }
-
-        output +=
-          `\nPriority: ${objective.priority}`;
-
-        if (objective.due_at) {
-          output +=
-            `\nDue: ${objective.due_at}`;
-        }
-
-        return output;
-      })
-      .join("\n\n");
-
-  return `
-ACTIVE OBJECTIVES:
-
-${formatted}
-
-OBJECTIVE RULES:
-
-- Distinguish goals, projects, commitments and tasks.
-- Active objectives should influence prioritization.
-- Do not automatically promote new ideas into objectives.
-- When multiple objectives compete, consider priority and current state.
-- Surface conflicts between new requests and existing commitments.
-`;
-}
-
-
-// --------------------------------------------------
-// EXPLICIT MEMORY COMMAND
-// --------------------------------------------------
-
-function extractExplicitMemory(
-  message: string
-): string | null {
-
-  const patterns = [
-    /^zapamiętaj[, ]+(?:że\s+)?(.+)$/i,
-    /^zapamietaj[, ]+(?:ze\s+)?(.+)$/i,
-    /^pamiętaj[, ]+(?:że\s+)?(.+)$/i,
-    /^pamietaj[, ]+(?:ze\s+)?(.+)$/i,
-    /^remember[, ]+(?:that\s+)?(.+)$/i
-  ];
-
-  for (const pattern of patterns) {
-
-    const match =
-      message
-        .trim()
-        .match(pattern);
-
-    if (match?.[1]) {
-      return match[1].trim();
-    }
-  }
-
-  return null;
-}
-
-
-// --------------------------------------------------
-// SAVE EXPLICIT MEMORY
-// --------------------------------------------------
-
-async function handleExplicitMemory(
-  message: string
-) {
-
-  const memoryContent =
-    extractExplicitMemory(message);
-
-  if (!memoryContent) {
-    return null;
-  }
-
-  const existing =
-    await getActiveMemories(100);
-
-  const duplicate =
-    existing.some(memory =>
-      memory.content
-        .trim()
-        .toLowerCase() ===
-      memoryContent
-        .trim()
-        .toLowerCase()
-    );
-
-  if (!duplicate) {
-
-    await saveMemory({
-      type: "explicit_user_memory",
-      content: memoryContent,
-      source: "explicit_user_command",
-      confidence: 1,
-
-      metadata: {
-        captured_by: "alfred_v0.5"
-      }
-    });
-
-    console.log(
-      `🧠 Memory saved: ${memoryContent}`
-    );
-
-  } else {
-
-    console.log(
-      `🧠 Memory already exists: ${memoryContent}`
-    );
-  }
-
-  return memoryContent;
-}
-
-
-// --------------------------------------------------
+// ============================================================
 // ASK ALFRED
-// --------------------------------------------------
+// ============================================================
 
 export async function askAlfred(
   conversationId: string,
-  message: string
-) {
+  userMessage: string
+): Promise<string> {
 
-  // ------------------------------------------------
-  // 1. Explicit memory
-  // ------------------------------------------------
+  const cleanMessage =
+    userMessage.trim();
 
-  try {
 
-    await handleExplicitMemory(
-      message
-    );
-
-  } catch (error) {
-
-    console.error(
-      "Memory save error:",
-      error
-    );
+  if (!cleanMessage) {
+    return "Napisz mi, czego potrzebujesz.";
   }
 
 
-  // ------------------------------------------------
-  // 2. Retrieve all Alfred context
-  // ------------------------------------------------
+  // ==========================================================
+  // LOAD FRESH STRUCTURED CONTEXT
+  // ==========================================================
 
-  let memoryContext = "";
-  let currentStateContext = "";
-  let decisionsContext = "";
-  let objectivesContext = "";
+  let personalContext = "";
 
-
-  // MEMORY
 
   try {
 
-    const memories =
-      await getActiveMemories(50);
-
-    memoryContext =
-      formatMemories(memories);
+    personalContext =
+      await buildAlfredContextPrompt();
 
   } catch (error) {
 
     console.error(
-      "Memory retrieval error:",
+      "⚠️ Alfred context load failed:",
       error
     );
 
-    memoryContext = `
-PERSISTENT MEMORY:
 
-Memory database is temporarily unavailable.
-Do not invent missing memories.
+    personalContext = `
+==================================================
+ALFRED PERSONAL CONTEXT
+==================================================
+
+Structured personal context could not be loaded
+for this turn.
+
+Do not invent missing current state.
+
+Use Kari's current message and the core instructions.
+
+==================================================
 `;
   }
 
 
-  // CURRENT STATE
-
-  try {
-
-    const state =
-      await getCurrentState();
-
-    currentStateContext =
-      formatCurrentState(state);
-
-  } catch (error) {
-
-    console.error(
-      "Current state retrieval error:",
-      error
-    );
-
-    currentStateContext = `
-CURRENT STATE:
-
-Current-state database is temporarily unavailable.
-Do not invent current information.
-`;
-  }
-
-
-  // DECISIONS
-
-  try {
-
-    const decisions =
-      await getActiveDecisions(30);
-
-    decisionsContext =
-      formatDecisions(decisions);
-
-  } catch (error) {
-
-    console.error(
-      "Decisions retrieval error:",
-      error
-    );
-
-    decisionsContext = `
-ACTIVE DECISIONS:
-
-Decision database is temporarily unavailable.
-Do not invent prior decisions.
-`;
-  }
-
-
-  // OBJECTIVES
-
-  try {
-
-    const objectives =
-      await getActiveObjectives(50);
-
-    objectivesContext =
-      formatObjectives(objectives);
-
-  } catch (error) {
-
-    console.error(
-      "Objectives retrieval error:",
-      error
-    );
-
-    objectivesContext = `
-ACTIVE OBJECTIVES:
-
-Objectives database is temporarily unavailable.
-Do not invent goals or commitments.
-`;
-  }
-
-
-  // ------------------------------------------------
-  // 3. BUILD ALFRED CONTEXT
-  // ------------------------------------------------
+  // ==========================================================
+  // BUILD INSTRUCTIONS
+  // ==========================================================
 
   const instructions = `
 ${ALFRED_INSTRUCTIONS}
 
+${CONTEXT_RULES}
 
-========================================
-CURRENT STATE
-========================================
-
-${currentStateContext}
-
-
-========================================
-ACTIVE DECISIONS
-========================================
-
-${decisionsContext}
-
-
-========================================
-ACTIVE OBJECTIVES
-========================================
-
-${objectivesContext}
-
-
-========================================
-PERSISTENT MEMORY
-========================================
-
-${memoryContext}
-
-
-========================================
-CONTEXT PRIORITY
-========================================
-
-When sources conflict, use this hierarchy:
-
-1. Kari's explicit statement in the current message
-2. Confirmed Current State
-3. Active Decisions
-4. Active Objectives / Commitments
-5. Persistent Memory
-6. General inference
-
-IMPORTANT:
-
-- Never allow an old memory to silently override newer state.
-- Never turn an idea into a project unless Kari actually commits to it.
-- Protect prior decisions from accidental reopening.
-- Surface contradictions when they materially affect the answer.
-- If the database is uncertain or missing something, acknowledge uncertainty.
+${personalContext}
 `;
 
 
-  // ------------------------------------------------
-  // 4. SHORT-TERM CONVERSATION CONTINUITY
-  // ------------------------------------------------
+  // ==========================================================
+  // SHORT-TERM THREAD CONTINUITY
+  // ==========================================================
 
   const previousResponseId =
-    previousResponseByConversation.get(
-      conversationId
+    previousResponseByConversation
+      .get(conversationId);
+
+
+  // ==========================================================
+  // OPENAI RESPONSE
+  // ==========================================================
+
+  const request: any = {
+
+    model:
+      process.env.OPENAI_MODEL ||
+      "gpt-5.6-sol",
+
+    instructions,
+
+    input:
+      cleanMessage
+  };
+
+
+  if (previousResponseId) {
+
+    request.previous_response_id =
+      previousResponseId;
+  }
+
+
+  const response =
+    await client.responses.create(
+      request
     );
 
 
-  // ------------------------------------------------
-  // 5. CALL OPENAI
-  // ------------------------------------------------
+  // ==========================================================
+  // REMEMBER SHORT-TERM RESPONSE CHAIN
+  // ==========================================================
 
-  const response =
-    await client.responses.create({
+  if (response.id) {
 
-      model:
-        process.env.OPENAI_MODEL ||
-        "gpt-5.6-sol",
-
-      instructions,
-
-      input: message,
-
-      ...(previousResponseId
-        ? {
-            previous_response_id:
-              previousResponseId
-          }
-        : {})
-    });
+    previousResponseByConversation
+      .set(
+        conversationId,
+        response.id
+      );
+  }
 
 
-  // ------------------------------------------------
-  // 6. SAVE RESPONSE ID
-  // ------------------------------------------------
+  // ==========================================================
+  // OUTPUT
+  // ==========================================================
 
-  previousResponseByConversation.set(
-    conversationId,
-    response.id
-  );
+  const answer =
+    response.output_text
+      ?.trim();
 
 
-  // ------------------------------------------------
-  // 7. RETURN ANSWER
-  // ------------------------------------------------
+  if (!answer) {
 
-  const text =
-    response.output_text?.trim();
+    return (
+      "Nie udało mi się wygenerować odpowiedzi. " +
+      "Spróbuj wysłać wiadomość jeszcze raz."
+    );
+  }
 
-  return (
-    text ||
-    "Nie udało mi się wygenerować odpowiedzi."
-  );
+
+  return answer;
+}
+
+
+// ============================================================
+// OPTIONAL RESET FOR DEBUGGING
+// ============================================================
+
+export function resetConversation(
+  conversationId: string
+) {
+
+  previousResponseByConversation
+    .delete(
+      conversationId
+    );
 }

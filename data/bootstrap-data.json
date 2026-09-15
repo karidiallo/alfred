@@ -1,0 +1,104 @@
+{
+  "memories": [
+    {
+      "type": "preference",
+      "dedupe_key": "preference_comparison_format",
+      "content": "Kari prefers comparisons and structured evaluations presented in tables.",
+      "confidence": 1
+    },
+    {
+      "type": "working_style",
+      "dedupe_key": "working_style_speed",
+      "content": "Kari values speed, execution and reducing unnecessary hesitation.",
+      "confidence": 1
+    },
+    {
+      "type": "working_style",
+      "dedupe_key": "working_style_overwhelm",
+      "content": "When Kari is overwhelmed, reduce the plan to at most three primary actions and clearly state the first action.",
+      "confidence": 1
+    },
+    {
+      "type": "working_style",
+      "dedupe_key": "working_style_execution_over_polishing",
+      "content": "Kari benefits from being challenged when research, redesign or polishing begins replacing real-world execution.",
+      "confidence": 0.95
+    },
+    {
+      "type": "preference",
+      "dedupe_key": "preference_critical_feedback",
+      "content": "Kari prefers critical evaluation over automatic validation of her ideas.",
+      "confidence": 1
+    },
+    {
+      "type": "value",
+      "dedupe_key": "value_financial_independence",
+      "content": "Financial independence is one of Kari's major long-term priorities.",
+      "confidence": 1
+    },
+    {
+      "type": "project_context",
+      "dedupe_key": "project_context_digitalmap",
+      "content": "DigitalMap is Kari's business focused on diagnosing what blocks a company's digital growth and turning that diagnosis into priorities, implementation and measurable outcomes.",
+      "confidence": 1
+    },
+    {
+      "type": "project_context",
+      "dedupe_key": "project_context_nenefl",
+      "content": "NeneFL is Kari's music project and artist identity.",
+      "confidence": 1
+    },
+    {
+      "type": "learning",
+      "dedupe_key": "learning_french",
+      "content": "French is an active learning area for Kari with an emphasis on practical communication.",
+      "confidence": 0.95
+    }
+  ],
+
+  "decisions": [
+    {
+      "dedupe_key": "new_ideas_default_to_idea_lab",
+      "title": "New ideas default to Idea Lab",
+      "decision": "A new idea should not automatically become an active project.",
+      "rationale": "Protect focus and reduce unnecessary context switching."
+    },
+    {
+      "dedupe_key": "execution_before_unnecessary_polishing",
+      "title": "Execution before unnecessary polishing",
+      "decision": "When preparation is sufficient, prefer real-world execution over additional polishing.",
+      "rationale": "Real-world validation produces better information than endless preparation."
+    }
+  ],
+
+  "objectives": [
+    {
+      "kind": "goal",
+      "dedupe_key": "goal_financial_independence",
+      "title": "Build financial independence",
+      "description": "Increase stable income, financial resilience and long-term wealth.",
+      "priority": 1
+    },
+    {
+      "kind": "project",
+      "dedupe_key": "project_digitalmap",
+      "title": "DigitalMap",
+      "description": "Build and validate DigitalMap as a commercially viable business.",
+      "priority": 1
+    },
+    {
+      "kind": "project",
+      "dedupe_key": "project_nenefl",
+      "title": "NeneFL",
+      "description": "Develop Kari's music career and artist project.",
+      "priority": 2
+    },
+    {
+      "kind": "goal",
+      "dedupe_key": "goal_french",
+      "title": "Improve French",
+      "description": "Build practical speaking and listening ability.",
+      "priority": 3
+    }
+  ]
+}
