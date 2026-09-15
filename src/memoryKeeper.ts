@@ -1,4 +1,11 @@
 import {
+  saveTaskSafely,
+  saveCommitmentSafely,
+  saveIdeaSafely,
+  saveDecisionSafely
+} from "./safeEntityWrites.js";
+
+import {
   mergeCurrentState
 } from "./stateMutations.js";
 
@@ -18,9 +25,13 @@ import {
 
   saveProject,
   saveGoal,
+  saveOutcome,
 
   getProjects,
   getGoals,
+  getOpenTasks,
+  getOpenCommitments,
+  getActiveDecisions,
 
   type ProfileCategory,
   type ProjectInput,
@@ -121,6 +132,13 @@ type KeeperDecision = {
 type KeeperTask = {
   dedupe_key: string;
 
+  status?:
+  | "open"
+  | "in_progress"
+  | "blocked"
+  | "done"
+  | "cancelled";
+
   project_id?: string | null;
 
   goal_id?: string | null;
@@ -138,6 +156,29 @@ type KeeperTask = {
   confidence?: number;
 };
 
+type KeeperOutcome = {
+  entity_type?:
+    | "task"
+    | "commitment"
+    | "project"
+    | "decision"
+    | "experiment"
+    | null;
+
+  entity_id?: string | null;
+
+  project_id?: string | null;
+
+  title?: string | null;
+
+  expected?: string | null;
+
+  actual: string;
+
+  lesson?: string | null;
+
+  occurred_at?: string | null;
+};
 
 type KeeperCommitment = {
   dedupe_key: string;
@@ -152,6 +193,11 @@ type KeeperCommitment = {
     | "administrative";
 
   title: string;
+
+  status?:
+    | "open"
+    | "completed"
+    | "cancelled";
 
   counterparty?: string | null;
 
@@ -275,6 +321,9 @@ type KeeperResult = {
 
   goal_updates:
     KeeperGoalUpdate[];
+  
+  outcomes:
+    KeeperOutcome[];
 };
 
 
@@ -433,7 +482,10 @@ function parseKeeperJson(
 
             next_action:
               item.next_action ??
-              null
+              null,
+            
+            status:
+              item.status,
 
           })
         )
@@ -506,12 +558,60 @@ function parseKeeperJson(
       Array.isArray(
         parsed.tasks
       )
-        ? parsed.tasks
-        : [],
+        ? parsed.tasks.map(
+            (item: any) => ({
+
+              dedupe_key:
+                item.dedupe_key ??
+                item.key,
+
+              project_id:
+                item.project_id ??
+                null,
+
+              goal_id:
+                item.goal_id ??
+                null,
+
+              title:
+                item.title ??
+                item.description,
+
+              description:
+                item.description,
+
+              status:
+                item.status,
+
+              priority:
+                item.priority,
+
+              due_at:
+                item.due_at ??
+                null,
+
+              next_action:
+                item.next_action ??
+                null,
+
+              confidence:
+                item.confidence ??
+                1
+
+        })
+      )
+    : [],
 
     commitments,
 
     ideas,
+
+    outcomes:
+      Array.isArray(
+        parsed.outcomes
+      )
+        ? parsed.outcomes
+        : [],
 
     project_updates:
       Array.isArray(
@@ -554,11 +654,17 @@ export async function runMemoryKeeper(
 
   const [
     existingProjects,
-    existingGoals
+    existingGoals,
+    existingTasks,
+    existingCommitments,
+    existingDecisions
   ] =
     await Promise.all([
       getProjects(),
-      getGoals()
+      getGoals(),
+      getOpenTasks(),
+      getOpenCommitments(),
+      getActiveDecisions()
     ]);
 
 
@@ -606,7 +712,86 @@ export async function runMemoryKeeper(
       })
     );
 
+  const taskContext =
+    existingTasks.map(
+     task => ({
+        dedupe_key:
+          task.dedupe_key,
 
+        title:
+          task.title,
+
+        project_id:
+          task.project_id,
+
+        goal_id:
+          task.goal_id,
+
+        status:
+          task.status,
+
+        due_at:
+          task.due_at,
+
+        next_action:
+          task.next_action,
+
+        priority:
+          task.priority
+      })
+    );
+
+  const commitmentContext =
+    existingCommitments.map(
+      commitment => ({
+        dedupe_key:
+          commitment.dedupe_key,
+
+        type:
+          commitment.type,
+
+        title:
+          commitment.title,
+
+        counterparty:
+          commitment.counterparty,
+
+        due_at:
+          commitment.due_at,
+
+        status:
+          commitment.status,
+
+        next_action:
+          commitment.next_action
+      })
+    );
+
+        const decisionContext =
+  existingDecisions.map(
+    decision => ({
+      dedupe_key:
+        decision.dedupe_key,
+
+      title:
+        decision.title,
+
+      decision:
+        decision.decision,
+
+      hypothesis:
+        decision.hypothesis,
+
+      expected_outcome:
+        decision.expected_outcome,
+
+      review_condition:
+        decision.review_condition,
+
+      lifecycle_status:
+        decision.lifecycle_status
+    })
+  );
   // ==========================================================
   // CLASSIFICATION
   // ==========================================================
@@ -836,6 +1021,39 @@ During venting:
 tasks should usually remain empty unless Kari clearly
 states an actual obligation or intended action.
 
+==================================================
+TASK LIFECYCLE
+==================================================
+
+A task may have status:
+
+open
+in_progress
+blocked
+done
+cancelled
+
+Use "done" only when Kari explicitly says
+the task has been finished.
+
+Examples:
+
+"Wysłałam już te CV."
+→ existing task status = "done"
+
+"Skończyłam audyt."
+→ existing task status = "done"
+
+"Nie robię już tego zadania."
+→ existing task status = "cancelled"
+
+When referring to an existing task, reuse its exact
+dedupe_key from CURRENT KNOWN OPEN TASKS.
+
+Do not create a second task for the same action.
+
+Do not set status = "open" merely because an existing
+task is mentioned again.
 
 ==================================================
 COMMITMENTS
@@ -897,6 +1115,69 @@ Example:
 
 not project.
 
+==================================================
+OUTCOMES
+==================================================
+
+Outcome = a concrete observed result of an action,
+decision, experiment, project or commitment.
+
+An outcome is NOT merely task completion.
+
+Examples:
+
+"Wysłałam 10 CV i dostałam 2 odpowiedzi."
+→ outcome:
+  actual = "Sent 10 CVs and received 2 responses"
+
+"Zmieniliśmy landing page i konwersja wzrosła z 2% do 3%."
+→ outcome
+
+"Zadzwoniłam do klienta."
+→ NOT automatically an outcome.
+This may only mean a task was completed.
+
+"Skończyłam audyt."
+→ task status = done
+→ NOT an outcome unless Kari also states what resulted from it.
+
+
+Create an outcome when the message contains a concrete
+result, consequence, measured effect or observed response.
+
+Possible entity_type values:
+
+task
+commitment
+project
+decision
+experiment
+
+If the result clearly relates to an existing task or commitment,
+reuse its exact dedupe_key as entity_id.
+
+If it clearly relates to a known project,
+use the existing project ID.
+
+Do not invent expected results.
+
+Only fill "expected" if the expectation was explicitly known
+from context or explicitly stated by Kari.
+
+"lesson" should only be filled when Kari explicitly states
+a lesson/conclusion or when the conclusion is extremely direct.
+
+Do not manufacture strategic lessons from one result.
+
+Example:
+
+"Zrobiłam 20 cold maili, 3 osoby odpisały."
+→ outcome actual = "20 cold emails sent; 3 replies received"
+
+NOT:
+→ lesson = "Cold email is the best acquisition channel"
+
+One observation is evidence, not universal proof.
 
 ==================================================
 PROJECT UPDATES
@@ -1013,6 +1294,82 @@ ${JSON.stringify(
   2
 )}
 
+==================================================
+CURRENT KNOWN OPEN TASKS
+==================================================
+
+${JSON.stringify(
+  taskContext,
+  null,
+  2
+)}
+
+When the user's message refers to one of these existing tasks,
+reuse its exact dedupe_key.
+
+Do not create a new task for the same action.
+
+If Kari explicitly says the task was finished,
+reuse the existing dedupe_key and set:
+
+"status": "completed"
+
+If she explicitly abandons or cancels it:
+
+"status": "cancelled"
+
+==================================================
+CURRENT KNOWN OPEN COMMITMENTS
+==================================================
+
+${JSON.stringify(
+  commitmentContext,
+  null,
+  2
+)}
+
+When the user's message refers to one of these existing
+commitments, reuse its exact dedupe_key.
+
+Do not create a new semantic key for the same obligation.
+
+If Kari says an existing obligation was fulfilled,
+return that existing dedupe_key with:
+
+"status": "completed"
+
+If it was cancelled:
+
+"status": "cancelled"
+
+==================================================
+CURRENT KNOWN ACTIVE DECISIONS
+==================================================
+
+${JSON.stringify(
+  decisionContext,
+  null,
+  2
+)}
+
+When an outcome clearly evaluates or results from one of these
+existing decisions, use:
+
+"entity_type": "decision"
+
+and reuse the decision's exact dedupe_key as:
+
+"entity_id"
+
+Do not invent a new decision key.
+
+Do not link an outcome to a decision merely because the topics
+are loosely related.
+
+Only link when the relationship is reasonably clear.
+
+If the outcome directly tests an expected_outcome from a known
+decision, prefer linking it to that decision.
 
 ==================================================
 OUTPUT FORMAT
@@ -1041,6 +1398,8 @@ Exact shape:
   "commitments": [],
 
   "ideas": [],
+
+  "outcomes": [],
 
   "project_updates": [],
 
@@ -1302,7 +1661,7 @@ Prefer storing nothing over storing noise.
     }
 
 
-    await saveDecision({
+    await saveDecisionSafely({
 
       dedupe_key:
         decision.dedupe_key,
@@ -1358,7 +1717,7 @@ Prefer storing nothing over storing noise.
     }
 
 
-    await saveTask({
+    await saveTaskSafely({
 
       dedupe_key:
         task.dedupe_key,
@@ -1378,8 +1737,7 @@ Prefer storing nothing over storing noise.
         task.description,
 
       priority:
-        task.priority ??
-        3,
+        task.priority,
 
       due_at:
         task.due_at ??
@@ -1397,7 +1755,7 @@ Prefer storing nothing over storing noise.
         1,
 
       status:
-        "open",
+        task.status,
 
       metadata: {
         captured_by:
@@ -1430,7 +1788,7 @@ Prefer storing nothing over storing noise.
     }
 
 
-    await saveCommitment({
+    await saveCommitmentSafely({
 
       dedupe_key:
         commitment.dedupe_key,
@@ -1453,8 +1811,7 @@ Prefer storing nothing over storing noise.
         null,
 
       reliability:
-        commitment.reliability ??
-        1,
+        commitment.reliability,
 
       consequence_level:
         commitment.consequence_level ??
@@ -1469,7 +1826,7 @@ Prefer storing nothing over storing noise.
         null,
 
       status:
-        "open",
+        commitment.status,
 
       metadata: {
         captured_by:
@@ -1502,7 +1859,7 @@ Prefer storing nothing over storing noise.
     }
 
 
-    await saveIdea({
+    await saveIdeaSafely({
 
       dedupe_key:
         idea.dedupe_key,
@@ -1512,9 +1869,6 @@ Prefer storing nothing over storing noise.
 
       description:
         idea.description,
-
-      status:
-        "idea",
 
       source_type:
         "user_explicit",
@@ -1538,6 +1892,104 @@ Prefer storing nothing over storing noise.
     );
   }
 
+  // ==========================================================
+  // OUTCOMES
+  // ==========================================================
+
+  for (
+    const outcome of
+    result.outcomes
+  ) {
+
+  if (
+    !outcome.actual
+  ) {
+    continue;
+  }
+
+
+  await saveOutcome({
+
+    entity_type:
+      outcome.entity_type ??
+      null,
+
+    entity_id:
+      outcome.entity_id ??
+      null,
+
+    project_id:
+      outcome.project_id ??
+      null,
+
+    title:
+      outcome.title ??
+      null,
+
+    expected:
+      outcome.expected ??
+      null,
+
+    actual:
+      outcome.actual,
+
+    lesson:
+      outcome.lesson ??
+      null,
+
+    occurred_at:
+      outcome.occurred_at ??
+      undefined,
+
+    metadata: {
+      captured_by:
+        "memory_keeper_v1"
+    }
+
+  });
+
+  // If this outcome belongs to a known decision,
+// mirror the observed result into that decision.
+// Do not infer a lesson and do not mark it reviewed yet.
+if (
+  outcome.entity_type === "decision" &&
+  outcome.entity_id
+) {
+
+  const matchingDecision =
+    existingDecisions.find(
+      decision =>
+        decision.dedupe_key ===
+        outcome.entity_id
+    );
+
+
+  if (matchingDecision) {
+
+    await saveDecisionSafely({
+
+      dedupe_key:
+        outcome.entity_id,
+
+      actual_outcome:
+        outcome.actual,
+
+      source_type:
+        "memory_keeper_v1"
+
+    });
+
+
+    console.log(
+      `🔗 Decision outcome linked: ${outcome.entity_id}`
+    );
+  }
+}
+
+  console.log(
+    `📈 Outcome saved: ${outcome.title ?? outcome.actual}`
+  );
+  }
 
   // ==========================================================
   // PROJECT UPDATES
