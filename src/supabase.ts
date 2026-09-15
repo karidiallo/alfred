@@ -199,3 +199,54 @@ export async function saveObjective(input: {
 
   return data;
 }
+
+// --------------------------------------------------
+// READ ACTIVE DECISIONS
+// --------------------------------------------------
+
+export async function getActiveDecisions(
+  limit = 30
+) {
+  const { data, error } = await supabase
+    .from("decisions")
+    .select("*")
+    .eq("status", "active")
+    .order("decided_at", {
+      ascending: false
+    })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(
+      `Nie udało się pobrać decyzji: ${error.message}`
+    );
+  }
+
+  return data ?? [];
+}
+
+
+// --------------------------------------------------
+// READ ACTIVE OBJECTIVES
+// --------------------------------------------------
+
+export async function getActiveObjectives(
+  limit = 50
+) {
+  const { data, error } = await supabase
+    .from("objectives")
+    .select("*")
+    .eq("status", "active")
+    .order("priority", {
+      ascending: true
+    })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(
+      `Nie udało się pobrać objectives: ${error.message}`
+    );
+  }
+
+  return data ?? [];
+}
