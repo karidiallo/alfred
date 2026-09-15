@@ -4,66 +4,101 @@ import OpenAI from "openai";
 
 import {
   saveMemory,
+  saveProfileItem,
   setCurrentState,
+
   saveDecision,
-  saveObjective
+
+  saveTask,
+  saveCommitment,
+  saveIdea,
+
+  saveProject,
+  saveGoal,
+
+  getProjects,
+  getGoals,
+
+  type ProfileCategory,
+  type ProjectInput,
+  type GoalInput
 } from "./supabase.js";
 
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// ============================================================
+// OPENAI CLIENT
+// ============================================================
+
+const client =
+  new OpenAI({
+    apiKey:
+      process.env.OPENAI_API_KEY
+  });
 
 
-// ==================================================
+// ============================================================
 // TYPES
-// ==================================================
+// ============================================================
 
 type KeeperMemory = {
   type: string;
-
-  /**
-   * Stabilny semantyczny identyfikator.
-   *
-   * Np.
-   * preference_comparison_format
-   *
-   * NIE:
-   * preference_lubie_tabelki
-   */
   dedupe_key: string;
+  content: string;
+
+  confidence: number;
+  importance?: number;
+
+  stability?:
+    | "permanent"
+    | "long_term"
+    | "medium_term"
+    | "temporary"
+    | "volatile";
+};
+
+
+type KeeperProfileItem = {
+  id: string;
+
+  category:
+    ProfileCategory;
+
+  label?: string;
 
   content: string;
 
   confidence: number;
+
+  importance?: number;
+
+  stability?:
+    | "permanent"
+    | "long_term"
+    | "medium_term"
+    | "temporary"
+    | "volatile";
+
+  requires_future_confirmation?: boolean;
 };
 
 
 type KeeperState = {
-  /**
-   * Stabilny current-state key.
-   *
-   * np.
-   * current_priority
-   * primary_business
-   * current_job_status
-   */
   key: string;
 
   value: unknown;
 
   confidence: number;
+
+  importance?: number;
+
+  stability?:
+    | "volatile"
+    | "temporary"
+    | "medium_term";
 };
 
 
 type KeeperDecision = {
-  /**
-   * Jeden temat decyzji powinien
-   * zawsze używać tego samego key.
-   *
-   * np.
-   * dashboard_design_today
-   */
   dedupe_key: string;
 
   title: string;
@@ -72,60 +107,184 @@ type KeeperDecision = {
 
   rationale?: string;
 
+  expected_outcome?: string;
+
   review_condition?: string;
+
+  confidence?: number;
 };
 
 
-type KeeperObjective = {
-  kind:
-    | "goal"
-    | "project"
-    | "commitment"
-    | "task";
-
-  /**
-   * Stabilny identyfikator objective.
-   *
-   * np.
-   * project_digitalmap
-   * task_test_memory_keeper
-   */
+type KeeperTask = {
   dedupe_key: string;
+
+  project_id?: string | null;
+
+  goal_id?: string | null;
 
   title: string;
 
   description?: string;
 
   priority?: number;
+
+  due_at?: string | null;
+
+  next_action?: string | null;
+
+  confidence?: number;
+};
+
+
+type KeeperCommitment = {
+  dedupe_key: string;
+
+  type:
+    | "promise"
+    | "deadline"
+    | "payment"
+    | "appointment"
+    | "follow_up"
+    | "delivery"
+    | "administrative";
+
+  title: string;
+
+  counterparty?: string | null;
+
+  due_at?: string | null;
+
+  reliability?: number;
+
+  consequence_level?:
+    | "low"
+    | "medium"
+    | "high"
+    | "critical"
+    | null;
+
+  consequence_if_missed?: string | null;
+
+  next_action?: string | null;
+};
+
+
+type KeeperIdea = {
+  dedupe_key: string;
+
+  title: string;
+
+  description?: string;
+
+  estimated_upside?: string;
+
+  switching_cost?: string;
+};
+
+
+type KeeperProjectUpdate = {
+  project_id: string;
+
+  status?:
+    | "idea"
+    | "candidate"
+    | "active"
+    | "maintenance"
+    | "blocked"
+    | "paused"
+    | "completed"
+    | "abandoned"
+    | "archived";
+
+  stage?: string | null;
+
+  current_priority?: number | null;
+
+  urgency?: number | null;
+
+  current_bottleneck?: string | null;
+
+  next_action?: string | null;
+
+  blocked_by?: unknown;
+
+  last_progress_at?: string | null;
+
+  confidence?: number;
+};
+
+
+type KeeperGoalUpdate = {
+  goal_id: string;
+
+  status?: string;
+
+  current_priority?: number | null;
+
+  urgency?: number | null;
 };
 
 
 type KeeperResult = {
 
+  interaction_mode:
+    | "conversation"
+    | "venting"
+    | "brainstorm"
+    | "decision"
+    | "planning"
+    | "execution"
+    | "review"
+    | "learning";
+
+
+  profile_items:
+    KeeperProfileItem[];
+
+
   memories:
     KeeperMemory[];
+
 
   current_state:
     KeeperState[];
 
+
   decisions:
     KeeperDecision[];
 
-  objectives:
-    KeeperObjective[];
+
+  tasks:
+    KeeperTask[];
+
+
+  commitments:
+    KeeperCommitment[];
+
+
+  ideas:
+    KeeperIdea[];
+
+
+  project_updates:
+    KeeperProjectUpdate[];
+
+
+  goal_updates:
+    KeeperGoalUpdate[];
 };
 
 
-// ==================================================
-// JSON PARSER
-// ==================================================
+// ============================================================
+// JSON
+// ============================================================
 
-function extractJson(
-  text: string
+function parseKeeperJson(
+  raw: string
 ): KeeperResult {
 
   const cleaned =
-    text
+    raw
       .replace(
         /```json/gi,
         ""
@@ -141,7 +300,184 @@ function extractJson(
     JSON.parse(cleaned);
 
 
+  const allowedCommitmentTypes = [
+    "promise",
+    "deadline",
+    "payment",
+    "appointment",
+    "follow_up",
+    "delivery",
+    "administrative"
+  ];
+
+
+  function inferCommitmentType(
+    item: any
+  ) {
+
+    if (
+      allowedCommitmentTypes.includes(
+        item.type
+      )
+    ) {
+      return item.type;
+    }
+
+
+    const text =
+      `${item.title ?? ""} ${item.description ?? ""}`
+        .toLowerCase();
+
+
+    if (
+      /zapła|opła|payment|invoice|rachunek|faktur/.test(
+        text
+      )
+    ) {
+      return "payment";
+    }
+
+
+    if (
+      /spotkanie|wizyta|appointment|meeting/.test(
+        text
+      )
+    ) {
+      return "appointment";
+    }
+
+
+    if (
+      /follow.?up|odpisa|odpowiedz|reply/.test(
+        text
+      )
+    ) {
+      return "follow_up";
+    }
+
+
+    if (
+      /wyślij|wysłać|wyslac|send|dostarczy|deliver|report/.test(
+        text
+      )
+    ) {
+      return "delivery";
+    }
+
+
+    if (
+      /deadline|termin/.test(
+        text
+      )
+    ) {
+      return "deadline";
+    }
+
+
+    if (
+      /obieca|promise/.test(
+        text
+      )
+    ) {
+      return "promise";
+    }
+
+
+    return "administrative";
+  }
+
+
+  const commitments =
+    Array.isArray(
+      parsed.commitments
+    )
+      ? parsed.commitments.map(
+          (item: any) => ({
+
+            dedupe_key:
+              item.dedupe_key ??
+              item.key,
+
+            type:
+              inferCommitmentType(
+                item
+              ),
+
+            title:
+              item.title ??
+              item.description,
+
+            counterparty:
+              item.counterparty ??
+              null,
+
+            due_at:
+              item.due_at ??
+              null,
+
+            reliability:
+              item.reliability ??
+              item.confidence ??
+              1,
+
+            consequence_level:
+              item.consequence_level ??
+              null,
+
+            consequence_if_missed:
+              item.consequence_if_missed ??
+              null,
+
+            next_action:
+              item.next_action ??
+              null
+
+          })
+        )
+      : [];
+
+
+  const ideas =
+    Array.isArray(
+      parsed.ideas
+    )
+      ? parsed.ideas.map(
+          (item: any) => ({
+
+            dedupe_key:
+              item.dedupe_key ??
+              item.key,
+
+            title:
+              item.title,
+
+            description:
+              item.description,
+
+            estimated_upside:
+              item.estimated_upside,
+
+            switching_cost:
+              item.switching_cost
+
+          })
+        )
+      : [];
+
+
   return {
+
+    interaction_mode:
+      parsed.interaction_mode ??
+      "conversation",
+
+    profile_items:
+      Array.isArray(
+        parsed.profile_items
+      )
+        ? parsed.profile_items
+        : [],
+
     memories:
       Array.isArray(
         parsed.memories
@@ -163,30 +499,114 @@ function extractJson(
         ? parsed.decisions
         : [],
 
-    objectives:
+    tasks:
       Array.isArray(
-        parsed.objectives
+        parsed.tasks
       )
-        ? parsed.objectives
+        ? parsed.tasks
+        : [],
+
+    commitments,
+
+    ideas,
+
+    project_updates:
+      Array.isArray(
+        parsed.project_updates
+      )
+        ? parsed.project_updates
+        : [],
+
+    goal_updates:
+      Array.isArray(
+        parsed.goal_updates
+      )
+        ? parsed.goal_updates
         : []
   };
 }
 
 
-// ==================================================
-// MEMORY KEEPER
-// ==================================================
+
+// ============================================================
+// MAIN MEMORY KEEPER
+// ============================================================
 
 export async function runMemoryKeeper(
   userMessage: string
 ) {
 
-  if (
-    !userMessage.trim()
-  ) {
+  const message =
+    userMessage.trim();
+
+
+  if (!message) {
     return;
   }
 
+
+  // ==========================================================
+  // EXISTING PROJECT / GOAL IDS
+  // ==========================================================
+
+  const [
+    existingProjects,
+    existingGoals
+  ] =
+    await Promise.all([
+      getProjects(),
+      getGoals()
+    ]);
+
+
+  const projectContext =
+    existingProjects.map(
+      project => ({
+        id:
+          project.id,
+
+        title:
+          project.title,
+
+        status:
+          project.status,
+
+        stage:
+          project.stage,
+
+        current_priority:
+          project.current_priority,
+
+        current_bottleneck:
+          project.current_bottleneck,
+
+        next_action:
+          project.next_action
+      })
+    );
+
+
+  const goalContext =
+    existingGoals.map(
+      goal => ({
+        id:
+          goal.id,
+
+        title:
+          goal.title,
+
+        status:
+          goal.status,
+
+        current_priority:
+          goal.current_priority
+      })
+    );
+
+
+  // ==========================================================
+  // CLASSIFICATION
+  // ==========================================================
 
   const response =
     await client.responses.create({
@@ -198,471 +618,452 @@ export async function runMemoryKeeper(
 
 
       instructions: `
-You are Alfred's Memory Keeper.
+You are Alfred Memory Keeper v1.
 
 You NEVER speak to Kari.
 
-Your only job is to analyze one user message
-and decide whether it should change Alfred's
-long-term model of Kari's life.
+You analyze ONE user message and decide what,
+if anything, should update Alfred's structured
+personal operating model.
 
-You are a conservative information architect.
+Your job is NOT to save as much as possible.
 
-Do not maximize how much you save.
-
-Maximize:
-- correctness
+Your job is to preserve:
+- truth
 - continuity
-- deduplication
-- usefulness
 - temporal accuracy
+- correct entity classification
+- user control
+- low noise
 
 
-========================================
-THE FOUR STORAGE TYPES
-========================================
+==================================================
+STEP 1 — CLASSIFY INTERACTION MODE
+==================================================
+
+Choose exactly one:
+
+conversation
+venting
+brainstorm
+decision
+planning
+execution
+review
+learning
 
 
-1. MEMORY
+IMPORTANT MODE RULES
 
-Relatively stable or semi-stable information.
+VENTING:
+- do not automatically create tasks
+- do not change priorities
+- do not create behavioral patterns
+- do not interpret frustration as strategy
+
+BRAINSTORM:
+- may create IDEAS
+- must NOT activate projects
+- must NOT change priorities automatically
+
+DECISION:
+- explicit accepted choices may become decisions
+- major project changes require explicit user intent
+
+PLANNING:
+- may create tasks / commitments
+- may update explicit next actions
+
+EXECUTION:
+- may update progress / project next action
+- avoid inventing new strategy
+
+REVIEW:
+- may record explicit outcomes or state changes
+- do not infer success/failure without evidence
+
+
+==================================================
+PROFILE ITEMS
+==================================================
+
+Use profile_items only for relatively stable information.
+
+Allowed categories:
+
+identity
+value
+anti_goal
+preference
+working_style
 
 Examples:
 
-- preferences
-- working style
-- personal background
-- stable interests
-- recurring patterns
-- communication preferences
-- long-lived facts
+"I prefer tables for comparisons."
+→ preference
+
+"Music is a major part of who I am."
+→ identity
+
+"I value autonomy."
+→ value
 
 
-Example:
+DO NOT create working-style or personality conclusions
+from one temporary event.
 
-"Kiedy porównujesz opcje, wolę tabelki."
+Assistant inference must never silently become user fact.
 
-→
-
-{
-  "type": "preference",
-  "dedupe_key": "preference_comparison_format",
-  "content": "Kari prefers comparisons presented in tables.",
-  "confidence": 1
-}
+If something is an inference rather than explicit,
+prefer NOT storing it here.
 
 
-----------------------------------------
+==================================================
+MEMORIES
+==================================================
 
-
-2. CURRENT STATE
-
-What is believed to be true NOW
-and could later change.
+Use memories for useful historical / contextual facts
+that may matter later but are not current state.
 
 Examples:
 
-- current priority
-- current project phase
-- current work situation
-- current financial situation
-- active focus
-- current location
-- current status of something
+"DigitalMap originally started as..."
+"I used to work with..."
+"This approach failed last month..."
 
+Do not duplicate profile items into memories unnecessarily.
 
-Example:
+==================================================
+EXPLICIT EXTRACTION RULE
+==================================================
 
-"Teraz moim priorytetem jest outreach."
+When the user explicitly states information that clearly
+matches one of the storage categories, do not omit it merely
+because the message also contains testing language, meta
+commentary or several different facts.
 
-→
+Process each explicit claim independently.
+
+Examples:
+
+"Moim aktualnym priorytetem jest TEST KEEPER V1."
+MUST produce current_state:
 
 {
   "key": "current_priority",
-  "value": "outreach",
-  "confidence": 1
+  "value": "TEST KEEPER V1",
+  "confidence": 1,
+  "importance": 0.9,
+  "stability": "temporary"
 }
 
+"16 września 2026 o 12:00 muszę wysłać raport do klienta."
+MUST produce a commitment, even if the same message also
+contains brainstorming, testing language or another idea.
 
-----------------------------------------
+A mixed message may legitimately produce several different
+entity types at the same time.
+
+Do not force the entire message into only one category.
+
+==================================================
+CURRENT STATE
+==================================================
+
+Current state = what is true NOW.
+
+Examples:
+
+"My current priority is X."
+"I have 300 PLN available right now."
+"I am waiting for client feedback."
+"I have low energy today."
+
+Never convert historical information to current state.
+
+"Miesiąc temu miałam 300 zł"
+IS NOT
+current money = 300.
+
+Volatile state should use stability = volatile.
+
+Examples of volatile data:
+- money
+- energy
+- availability
+- location
+- urgent deadlines
+- current capacity
 
 
-3. DECISION
+==================================================
+DECISIONS
+==================================================
 
-An explicit choice Kari has made.
+Create a decision ONLY when Kari clearly accepts
+or states a choice.
 
-Not:
-- an idea
-- a possibility
-- an emotion
-- a question
-- something she is merely considering
+Examples:
 
+"I decided I won't redesign before outreach."
+"Okay, let's pause project X."
+
+Do NOT create decisions from:
+- questions
+- possibilities
+- brainstorm
+- emotional reactions
+- "maybe"
+
+
+==================================================
+TASKS
+==================================================
+
+Task = an actionable item Kari intends to do.
+
+Examples:
+
+"Tomorrow I need to send 5 applications."
+"I have to call the dentist."
+
+Do NOT automatically convert every problem into a task.
+
+During venting:
+tasks should usually remain empty unless Kari clearly
+states an actual obligation or intended action.
+
+
+==================================================
+COMMITMENTS
+==================================================
+
+Commitment is stronger than a normal task.
+
+Examples:
+- promise to someone
+- payment obligation
+- appointment
+- delivery deadline
+- follow-up owed
+- administrative obligation
+
+Explicit obligation language such as:
+
+- "muszę"
+- "mam termin"
+- "obiecałam"
+- "mam zapłacić"
+- "mam spotkanie"
+- "muszę wysłać"
+- "mam dostarczyć"
+
+should strongly favor creating a commitment when there is
+a real obligation, deadline, counterparty or consequence.
+
+If the obligation is explicit but one optional field is
+unknown, still create the commitment and leave that field null.
+Do not discard the entire commitment because one detail is missing.
+
+Use commitment only when there is a real obligation,
+counterparty, deadline or consequence.
+
+reliability means:
+confidence that the obligation/deadline was understood correctly.
+
+consequence_level means:
+impact if it is missed.
+
+
+==================================================
+IDEAS
+==================================================
+
+New business/product/project ideas go to ideas.
+
+IMPORTANT:
+
+idea != project
+
+Never activate a new project automatically.
 
 Example:
 
-"Nie ruszam designu przed pierwszym outreach."
+"Maybe an app for farmers..."
+→ IDEA
 
-→
-
-{
-  "dedupe_key": "digitalmap_design_before_outreach",
-  "title": "DigitalMap design before outreach",
-  "decision": "Do not redesign DigitalMap before completing initial outreach.",
-  "rationale": "Execution and validation take priority over polishing."
-}
+not project.
 
 
-----------------------------------------
+==================================================
+PROJECT UPDATES
+==================================================
+
+You may update an EXISTING project only if the user's
+message clearly changes its state.
+
+You MUST use an existing project_id from the supplied list.
+
+Never invent a new project ID here.
+
+Examples:
+
+"I finished the Alfred bootstrap."
+→ may update Alfred project progress / next action
+
+"I am pausing DigitalMap."
+→ status = paused
+
+"DigitalMap is blocked by X."
+→ status = blocked
+   current_bottleneck = X
 
 
-4. OBJECTIVE
-
-Something Kari has actually adopted as:
-
-- goal
-- project
-- commitment
-- task
+Do NOT modify project priority just because Kari mentions
+another interesting idea.
 
 
-Example:
+==================================================
+GOAL UPDATES
+==================================================
 
-"Dzisiaj muszę wysłać 10 wiadomości."
+Use only explicit goal changes.
 
-→
+You MUST use an existing goal_id.
 
-{
-  "kind": "task",
-  "dedupe_key": "task_send_10_outreach_messages",
-  "title": "Send 10 outreach messages",
-  "description": "Complete today.",
-  "priority": 1
-}
+Do not infer changed life priorities from casual conversation.
 
 
-========================================
-CRITICAL DEDUPLICATION RULE
-========================================
+==================================================
+DEDUPE KEYS
+==================================================
 
-dedupe_key represents the LOGICAL SUBJECT,
-not the wording of the sentence.
+Keys describe the logical subject,
+not wording.
 
-Two statements about the same underlying fact,
-decision or objective MUST use the same dedupe_key.
-
-Example:
-
-"Kiedy coś porównujesz, dawaj tabelkę."
-
-and
-
-"Wolę comparisony w tabelach."
-
-must BOTH produce:
-
-preference_comparison_format
-
-
-Another example:
-
-"DigitalMap jest teraz moim głównym biznesem."
-
-and later:
-
-"Moim głównym biznesem jest nadal DigitalMap."
-
-should both use:
-
-primary_business
-
-
-Another example:
-
-"Nie zmieniam dziś designu dashboardu."
-
-and later:
-
-"Jednak dzisiaj redesign dashboardu jest OK."
-
-should both use:
-
-dashboard_design_today
-
-The VALUE / DECISION changes.
-
-The dedupe_key does NOT.
-
-
-========================================
-KEY NAMING
-========================================
-
-Keys must:
-
-- be lowercase
-- use snake_case
-- contain only useful semantic concepts
-- stay stable when wording changes
-- avoid dates unless the date is fundamental
-- avoid copying whole sentences
-- avoid random identifiers
-
-
-GOOD:
+Good:
 
 preference_comparison_format
 current_priority
-primary_business
-digitalmap_current_phase
-dashboard_design_today
-project_digitalmap
-career_job_search
-fitness_training_frequency
+task_send_job_applications
+commitment_box_payment
+idea_art_marketplace
 
+Bad:
 
-BAD:
-
-kari_likes_tables_very_much
-today_kari_said_she_likes_tables
 memory_123
-new_memory
-thing_about_dashboard
+kari_said_something_today
+new_task
 
 
-========================================
-UPDATE LOGIC
-========================================
-
-You do NOT decide whether something already exists.
-
-Your job is to produce the SAME semantic key
-for the same logical subject.
-
-The database will then:
-
-same key
-→ UPDATE
-
-new key
-→ CREATE
-
-The database keeps history separately.
+Same subject should produce the same key over time.
 
 
-========================================
-TEMPORAL RULES
-========================================
+==================================================
+SOURCE QUALITY
+==================================================
 
-Always distinguish:
+This message is an explicit user message.
 
-HISTORICAL
-vs
-CURRENT
+But interpretation of the message may still be uncertain.
 
-Example:
-
-"Miesiąc temu miałam 500 zł."
-
-DO NOT save:
-
-current_balance = 500
-
-That is historical information.
-
-
-Example:
-
-"Teraz mam 500 zł."
-
-May become current_state.
-
-
-Never silently convert an old value
-into current state.
-
-
-========================================
-IDEAS ARE NOT PROJECTS
-========================================
-
-Kari generates many ideas.
-
-Example:
-
-"Może zrobię aplikację dla galerii."
-
-This is NOT automatically:
-
-project
-
-goal
-
-commitment
-
-task
-
-or decision.
-
-Usually store nothing unless the message contains
-stable information worth remembering.
-
-
-========================================
-ASPIRATION IS NOT COMMITMENT
-========================================
-
-"I'd love to live in Paris someday"
-
-is not necessarily an objective.
-
-"I decided I'm moving to Paris in June"
-
-may contain both:
-
-decision
-+
-objective
-
-
-========================================
-EMOTION IS NOT DECISION
-========================================
-
-"I'm frustrated with DigitalMap"
-
-does not mean:
-
-close DigitalMap
-
-pivot DigitalMap
-
-stop DigitalMap
-
-
-========================================
-NOISE FILTER
-========================================
-
-Do NOT store:
-
-- greetings
-- jokes
-- casual commentary
-- rhetorical questions
-- temporary wording
-- assistant instructions
-- speculation
-- random brainstorms
-- information already implied only by inference
-- trivial details with no likely future value
-
-
-========================================
-CONFIDENCE
-========================================
-
-Use:
+Use confidence:
 
 1.0
-for explicit clear statements.
+= explicit and unambiguous
 
 0.8-0.95
-for highly reliable interpretation.
+= strong interpretation
 
-Below 0.75:
-prefer NOT storing it.
-
-
-========================================
-SENSITIVE INFERENCE
-========================================
-
-Never infer sensitive personal attributes.
-
-Only store information explicitly provided
-when appropriate for Alfred's function.
+below 0.75
+= usually do not store
 
 
-========================================
-OUTPUT
-========================================
+==================================================
+NO BEHAVIORAL PATTERN CREATION
+==================================================
 
-Return ONLY valid JSON.
+Do NOT create behavioral patterns from this message.
 
-Never markdown.
+Patterns require repeated evidence and are handled
+by a separate learning process.
 
-Never explanations.
 
-Never text before or after JSON.
+==================================================
+CURRENT KNOWN PROJECTS
+==================================================
 
-Always use this exact shape:
+${JSON.stringify(
+  projectContext,
+  null,
+  2
+)}
 
-{
-  "memories": [
-    {
-      "type": "preference",
-      "dedupe_key": "preference_comparison_format",
-      "content": "Kari prefers comparisons presented in tables.",
-      "confidence": 1
-    }
-  ],
 
-  "current_state": [
-    {
-      "key": "current_priority",
-      "value": "outreach",
-      "confidence": 1
-    }
-  ],
+==================================================
+CURRENT KNOWN GOALS
+==================================================
 
-  "decisions": [
-    {
-      "dedupe_key": "dashboard_design_today",
-      "title": "Dashboard design today",
-      "decision": "Do not redesign the dashboard today.",
-      "rationale": "Current priority is testing Alfred.",
-      "review_condition": "Reconsider after the Alfred test is completed."
-    }
-  ],
+${JSON.stringify(
+  goalContext,
+  null,
+  2
+)}
 
-  "objectives": [
-    {
-      "kind": "task",
-      "dedupe_key": "task_test_alfred_memory",
-      "title": "Test Alfred memory",
-      "description": "Complete the memory test.",
-      "priority": 1
-    }
-  ]
-}
 
-If nothing deserves storage:
+==================================================
+OUTPUT FORMAT
+==================================================
+
+Return ONLY JSON.
+
+No markdown.
+No explanation.
+
+Exact shape:
 
 {
+  "interaction_mode": "conversation",
+
+  "profile_items": [],
+
   "memories": [],
+
   "current_state": [],
+
   "decisions": [],
-  "objectives": []
+
+  "tasks": [],
+
+  "commitments": [],
+
+  "ideas": [],
+
+  "project_updates": [],
+
+  "goal_updates": []
 }
+
+If nothing should be stored,
+return empty arrays.
+
+Prefer storing nothing over storing noise.
 `,
 
 
       input:
-        userMessage
+        message
     });
 
 
   const raw =
-    response
-      .output_text
+    response.output_text
       ?.trim();
 
 
   if (!raw) {
     return;
   }
-
 
   let result:
     KeeperResult;
@@ -671,12 +1072,14 @@ If nothing deserves storage:
   try {
 
     result =
-      extractJson(raw);
+      parseKeeperJson(
+        raw
+      );
 
   } catch (error) {
 
     console.error(
-      "🧠 Memory Keeper returned invalid JSON:"
+      "🧠 Keeper v1 invalid JSON:"
     );
 
     console.error(raw);
@@ -685,9 +1088,83 @@ If nothing deserves storage:
   }
 
 
-  // ==================================================
-  // MEMORIES
-  // ==================================================
+  console.log(
+    `🎛️ Interaction mode: ${result.interaction_mode}`
+  );
+
+
+  // ==========================================================
+  // PROFILE
+  // ==========================================================
+
+  for (
+    const item of
+    result.profile_items
+  ) {
+
+    if (
+      !item.id ||
+      !item.content
+    ) {
+      continue;
+    }
+
+
+    await saveProfileItem({
+
+      id:
+        item.id,
+
+      category:
+        item.category,
+
+      label:
+        item.label,
+
+      content:
+        item.content,
+
+      source_type:
+        "user_explicit",
+
+      confidence:
+        item.confidence ??
+        1,
+
+      importance:
+        item.importance ??
+        0.7,
+
+      stability:
+        item.stability ??
+        "long_term",
+
+      status:
+        "active",
+
+      evidence_count:
+        1,
+
+      requires_future_confirmation:
+        item.requires_future_confirmation ??
+        false,
+
+      last_confirmed_at:
+        new Date()
+          .toISOString()
+
+    });
+
+
+    console.log(
+      `🪪 Profile upsert: ${item.id}`
+    );
+  }
+
+
+  // ==========================================================
+  // MEMORY
+  // ==========================================================
 
   for (
     const memory of
@@ -715,16 +1192,35 @@ If nothing deserves storage:
         memory.content,
 
       source:
-        "memory_keeper",
+        "memory_keeper_v1",
+
+      source_type:
+        "user_explicit",
 
       confidence:
         memory.confidence ??
-        0.8,
+        0.9,
+
+      importance:
+        memory.importance ??
+        0.5,
+
+      stability:
+        memory.stability ??
+        "medium_term",
+
+      evidence_count:
+        1,
+
+      last_confirmed_at:
+        new Date()
+          .toISOString(),
 
       metadata: {
         captured_by:
-          "memory_keeper_v0.2"
+          "memory_keeper_v1"
       }
+
     });
 
 
@@ -734,9 +1230,9 @@ If nothing deserves storage:
   }
 
 
-  // ==================================================
+  // ==========================================================
   // CURRENT STATE
-  // ==================================================
+  // ==========================================================
 
   for (
     const state of
@@ -754,10 +1250,29 @@ If nothing deserves storage:
 
       state.value,
 
-      "memory_keeper",
+      "memory_keeper_v1",
 
       state.confidence ??
-      0.8
+      0.9,
+
+      {
+        stability:
+          state.stability ??
+          "volatile",
+
+        importance:
+          state.importance ??
+          0.7,
+
+        confirmed_at:
+          new Date()
+            .toISOString(),
+
+        metadata: {
+          captured_by:
+            "memory_keeper_v1"
+        }
+      }
     );
 
 
@@ -767,9 +1282,9 @@ If nothing deserves storage:
   }
 
 
-  // ==================================================
+  // ==========================================================
   // DECISIONS
-  // ==================================================
+  // ==========================================================
 
   for (
     const decision of
@@ -798,8 +1313,22 @@ If nothing deserves storage:
       rationale:
         decision.rationale,
 
+      expected_outcome:
+        decision.expected_outcome,
+
       review_condition:
-        decision.review_condition
+        decision.review_condition,
+
+      source_type:
+        "user_explicit",
+
+      confidence:
+        decision.confidence ??
+        1,
+
+      lifecycle_status:
+        "accepted"
+
     });
 
 
@@ -809,45 +1338,432 @@ If nothing deserves storage:
   }
 
 
-  // ==================================================
-  // OBJECTIVES
-  // ==================================================
+  // ==========================================================
+  // TASKS
+  // ==========================================================
 
   for (
-    const objective of
-    result.objectives
+    const task of
+    result.tasks
   ) {
 
     if (
-      !objective.dedupe_key ||
-      !objective.title
+      !task.dedupe_key ||
+      !task.title
     ) {
       continue;
     }
 
 
-    await saveObjective({
-
-      kind:
-        objective.kind,
+    await saveTask({
 
       dedupe_key:
-        objective.dedupe_key,
+        task.dedupe_key,
+
+      project_id:
+        task.project_id ??
+        null,
+
+      goal_id:
+        task.goal_id ??
+        null,
 
       title:
-        objective.title,
+        task.title,
 
       description:
-        objective.description,
+        task.description,
 
       priority:
-        objective.priority ??
-        3
+        task.priority ??
+        3,
+
+      due_at:
+        task.due_at ??
+        null,
+
+      next_action:
+        task.next_action ??
+        null,
+
+      source_type:
+        "user_explicit",
+
+      confidence:
+        task.confidence ??
+        1,
+
+      status:
+        "open",
+
+      metadata: {
+        captured_by:
+          "memory_keeper_v1"
+      }
+
     });
 
 
     console.log(
-      `🎯 Objective upsert: ${objective.dedupe_key}`
+      `✅ Task upsert: ${task.dedupe_key}`
+    );
+  }
+
+
+  // ==========================================================
+  // COMMITMENTS
+  // ==========================================================
+
+  for (
+    const commitment of
+    result.commitments
+  ) {
+
+    if (
+      !commitment.dedupe_key ||
+      !commitment.title
+    ) {
+      continue;
+    }
+
+
+    await saveCommitment({
+
+      dedupe_key:
+        commitment.dedupe_key,
+
+      type:
+        commitment.type,
+
+      title:
+        commitment.title,
+
+      source_type:
+        "user_explicit",
+
+      counterparty:
+        commitment.counterparty ??
+        null,
+
+      due_at:
+        commitment.due_at ??
+        null,
+
+      reliability:
+        commitment.reliability ??
+        1,
+
+      consequence_level:
+        commitment.consequence_level ??
+        null,
+
+      consequence_if_missed:
+        commitment.consequence_if_missed ??
+        null,
+
+      next_action:
+        commitment.next_action ??
+        null,
+
+      status:
+        "open",
+
+      metadata: {
+        captured_by:
+          "memory_keeper_v1"
+      }
+
+    });
+
+
+    console.log(
+      `🤝 Commitment upsert: ${commitment.dedupe_key}`
+    );
+  }
+
+
+  // ==========================================================
+  // IDEAS
+  // ==========================================================
+
+  for (
+    const idea of
+    result.ideas
+  ) {
+
+    if (
+      !idea.dedupe_key ||
+      !idea.title
+    ) {
+      continue;
+    }
+
+
+    await saveIdea({
+
+      dedupe_key:
+        idea.dedupe_key,
+
+      title:
+        idea.title,
+
+      description:
+        idea.description,
+
+      status:
+        "idea",
+
+      source_type:
+        "user_explicit",
+
+      estimated_upside:
+        idea.estimated_upside,
+
+      switching_cost:
+        idea.switching_cost,
+
+      metadata: {
+        captured_by:
+          "memory_keeper_v1"
+      }
+
+    });
+
+
+    console.log(
+      `💡 Idea upsert: ${idea.dedupe_key}`
+    );
+  }
+
+
+  // ==========================================================
+  // PROJECT UPDATES
+  // ==========================================================
+
+  for (
+    const update of
+    result.project_updates
+  ) {
+
+    if (
+      !update.project_id
+    ) {
+      continue;
+    }
+
+
+    const existing =
+      existingProjects.find(
+        project =>
+          project.id ===
+          update.project_id
+      );
+
+
+    if (!existing) {
+
+      console.warn(
+        `⚠️ Unknown project id ignored: ${update.project_id}`
+      );
+
+      continue;
+    }
+
+
+    const merged:
+      ProjectInput = {
+
+      id:
+        existing.id,
+
+      area_id:
+        existing.area_id,
+
+      title:
+        existing.title,
+
+      status:
+        update.status ??
+        existing.status,
+
+      stage:
+        update.stage !==
+        undefined
+          ? update.stage
+          : existing.stage,
+
+      major_project:
+        existing.major_project,
+
+      description:
+        existing.description,
+
+      desired_outcome:
+        existing.desired_outcome,
+
+      definition_of_done:
+        existing.definition_of_done,
+
+      success_metrics:
+        existing.success_metrics,
+
+      strategic_priority:
+        existing.strategic_priority,
+
+      current_priority:
+        update.current_priority !==
+        undefined
+          ? update.current_priority
+          : existing.current_priority,
+
+      urgency:
+        update.urgency !==
+        undefined
+          ? update.urgency
+          : existing.urgency,
+
+      current_bottleneck:
+        update.current_bottleneck !==
+        undefined
+          ? update.current_bottleneck
+          : existing.current_bottleneck,
+
+      next_action:
+        update.next_action !==
+        undefined
+          ? update.next_action
+          : existing.next_action,
+
+      next_action_policy:
+        existing.next_action_policy,
+
+      blocked_by:
+        update.blocked_by !==
+        undefined
+          ? update.blocked_by
+          : existing.blocked_by,
+
+      last_progress_at:
+        update.last_progress_at ??
+        existing.last_progress_at,
+
+      review_at:
+        existing.review_at,
+
+      source_type:
+        "user_explicit",
+
+      confidence:
+        update.confidence ??
+        1,
+
+      metadata:
+        existing.metadata ??
+        {}
+    };
+
+
+    await saveProject(
+      merged
+    );
+
+
+    console.log(
+      `🚀 Project updated: ${update.project_id}`
+    );
+  }
+
+
+  // ==========================================================
+  // GOAL UPDATES
+  // ==========================================================
+
+  for (
+    const update of
+    result.goal_updates
+  ) {
+
+    if (
+      !update.goal_id
+    ) {
+      continue;
+    }
+
+
+    const existing =
+      existingGoals.find(
+        goal =>
+          goal.id ===
+          update.goal_id
+      );
+
+
+    if (!existing) {
+
+      console.warn(
+        `⚠️ Unknown goal id ignored: ${update.goal_id}`
+      );
+
+      continue;
+    }
+
+
+    const merged:
+      GoalInput = {
+
+      id:
+        existing.id,
+
+      area_id:
+        existing.area_id,
+
+      title:
+        existing.title,
+
+      description:
+        existing.description,
+
+      strategic_priority:
+        existing.strategic_priority,
+
+      current_priority:
+        update.current_priority !==
+        undefined
+          ? update.current_priority
+          : existing.current_priority,
+
+      urgency:
+        update.urgency !==
+        undefined
+          ? update.urgency
+          : existing.urgency,
+
+      urgency_policy:
+        existing.urgency_policy,
+
+      status:
+        update.status ??
+        existing.status,
+
+      review_cycle:
+        existing.review_cycle,
+
+      success_metrics:
+        existing.success_metrics,
+
+      metadata:
+        existing.metadata ??
+        {}
+    };
+
+
+    await saveGoal(
+      merged
+    );
+
+
+    console.log(
+      `🎯 Goal updated: ${update.goal_id}`
     );
   }
 }
