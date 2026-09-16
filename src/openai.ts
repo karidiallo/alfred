@@ -15,6 +15,9 @@ import {
   buildAlfredContextPrompt
 } from "./context.js";
 
+import {
+  getRuntimeContext
+} from "./runtimeContext.js";
 
 // ============================================================
 // OPENAI CLIENT
@@ -271,10 +274,16 @@ Use Kari's current message and the core instructions.
   // BUILD INSTRUCTIONS
   // ==========================================================
 
-  const instructions = `
+
+const runtimeContext =
+  getRuntimeContext();
+
+const instructions = `
 ${ALFRED_INSTRUCTIONS}
 
 ${CONTEXT_RULES}
+
+${runtimeContext}
 
 ${personalContext}
 `;
