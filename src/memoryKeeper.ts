@@ -1,3 +1,5 @@
+import { MEMORY_CLASSIFICATION_POLICY } from "./memoryPolicy.js";
+
 import {
   saveTaskSafely,
   saveCommitmentSafely,
@@ -807,6 +809,8 @@ export async function runMemoryKeeper(
 
       instructions: `
 You are Alfred Memory Keeper v1.
+
+${MEMORY_CLASSIFICATION_POLICY}
 
 You NEVER speak to Kari.
 
