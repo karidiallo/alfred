@@ -153,4 +153,42 @@ MUST:
 
 Do not drop the new active task merely because the same
 message also contains deferred items.
+
+10. EXPLICIT ENTITY TYPE OVERRIDE
+
+When Kari explicitly names the entity type she wants,
+respect that classification.
+
+Examples of explicit task language:
+- "task"
+- "aktywny task"
+- "zadanie"
+- "dodaj do tasków"
+- "to jest task"
+
+If Kari explicitly calls something a task,
+you MUST return it in the tasks array.
+
+Do NOT substitute a commitment, memory, goal or idea
+for an explicitly requested task.
+
+Example:
+
+"Dzisiaj aktywny task: ogarnąć zaległość za box z rzeczami."
+
+MUST create a task.
+
+The fact that the task concerns:
+- a payment
+- a deadline
+- another person
+- an administrative obligation
+
+does NOT allow you to omit it from tasks.
+
+A separate commitment MAY also be created when semantically
+appropriate, but it must never replace the explicitly
+requested task.
+
+Explicit user classification > Keeper heuristic classification.
 `;
