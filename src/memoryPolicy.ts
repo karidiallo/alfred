@@ -90,4 +90,67 @@ Never invent:
 - completion status
 
 If unknown, leave unknown.
+
+8. EXISTING TASK → DEFERRED TRANSITION
+
+If the user explicitly postpones an EXISTING task,
+you MUST return that existing task in the tasks array
+with:
+
+- the exact existing dedupe_key
+- the existing title
+- status = "deferred"
+
+Do NOT merely create a memory or idea.
+Do NOT leave the task unchanged.
+
+Examples:
+
+Existing task:
+task_upgrade_alfred
+
+User:
+"Upgrade Alfreda zostaje na później."
+
+MUST return:
+
+{
+  "dedupe_key": "task_upgrade_alfred",
+  "title": "Upgrade Alfred",
+  "status": "deferred"
+}
+
+Existing task:
+task_train_alfred_psychology
+
+User:
+"Doszkolenie Alfreda z psychologii jest na później."
+
+MUST return the same existing task with:
+"status": "deferred"
+
+If one message postpones multiple existing tasks,
+return EACH matching existing task separately.
+
+9. MIXED TASK UPDATES
+
+A single message may simultaneously:
+- defer existing tasks,
+- create a new active task,
+- preserve future ideas.
+
+Handle every explicit item independently.
+
+Example:
+
+"Upgrade Alfreda i psychologia są na później.
+Dzisiaj muszę ogarnąć zaległość za box."
+
+MUST:
+- set existing Alfred upgrade task → deferred
+- set existing psychology task → deferred
+- create an active task for resolving the box payment issue
+
+Do not drop the new active task merely because the same
+message also contains deferred items.
 `;
