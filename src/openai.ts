@@ -295,22 +295,23 @@ ${personalContext}
 
   const request: any = {
 
-    model:
-      process.env.OPENAI_MODEL ||
-      "gpt-5.6-sol",
+  model:
+    process.env.OPENAI_MODEL ||
+    "gpt-5.6-sol",
 
-    instructions,
+  instructions,
 
-    input:
-      cleanMessage
-  };
+  input:
+    cleanMessage,
 
+  tools: [
+    {
+      type: "web_search"
+    }
+  ],
 
-  if (previousResponseId) {
-
-    request.previous_response_id =
-      previousResponseId;
-  }
+  tool_choice: "auto"
+};
 
 
   const response =
