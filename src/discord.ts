@@ -481,6 +481,59 @@ function patchGatewayRequest(
   };
 }
 
+// --------------------------------------------------
+// PROACTIVE DISCORD MESSAGE
+// --------------------------------------------------
+
+export async function sendProactiveDiscordMessage(
+  content: string,
+  channelId?: string
+): Promise<void> {
+
+  if (!activeClient?.isReady()) {
+    throw new Error(
+      "Discord client is not ready."
+    );
+  }
+
+  const targetChannelId =
+    channelId?.trim() ||
+    process.env.DISCORD_CHANNEL_ID?.trim();
+
+  if (!targetChannelId) {
+    throw new Error(
+      "Brak DISCORD_CHANNEL_ID."
+    );
+  }
+
+  const channel =
+    await activeClient.channels.fetch(
+      targetChannelId
+    );
+
+  if (
+    !channel ||
+    !channel.isTextBased() ||
+    !("send" in channel)
+  ) {
+    throw new Error(
+      "Docelowy kanał Discord nie obsługuje wiadomości tekstowych."
+    );
+  }
+
+  for (
+    const chunk of
+    splitDiscordMessage(content)
+  ) {
+    await channel.send({
+      content: chunk,
+
+      allowedMentions: {
+        parse: []
+      }
+    });
+  }
+}
 
 // --------------------------------------------------
 // START DISCORD BOT
