@@ -1464,11 +1464,6 @@ Prefer storing nothing over storing noise.
   }
 
   console.log(
-    "🧠 KEEPER TASKS:",
-    JSON.stringify(result.tasks, null, 2)
-  );
-
-  console.log(
     `🎛️ Interaction mode: ${result.interaction_mode}`
   );
 
