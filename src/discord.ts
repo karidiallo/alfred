@@ -578,16 +578,42 @@ export async function startDiscordBot() {
 
     try {
 
-      await client.login(
-        token
+await client.login(
+  token
+);
+
+if (!client.isReady()) {
+
+  await new Promise<void>(
+    (resolve, reject) => {
+
+      const timeout =
+        setTimeout(
+          () => {
+            reject(
+              new Error(
+                "Discord client did not become ready within 20 seconds."
+              )
+            );
+          },
+          20000
+        );
+
+      client.once(
+        Events.ClientReady,
+        () => {
+          clearTimeout(timeout);
+          resolve();
+        }
       );
+    }
+  );
+}
 
+activeClient =
+  client;
 
-      activeClient =
-        client;
-
-
-      return;
+return;
 
     } catch (error) {
 
