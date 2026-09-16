@@ -135,11 +135,12 @@ type KeeperTask = {
   dedupe_key: string;
 
   status?:
-  | "open"
-  | "in_progress"
-  | "blocked"
-  | "done"
-  | "cancelled";
+    | "open"
+    | "in_progress"
+    | "blocked"
+    | "deferred"
+    | "done"
+    | "cancelled";
 
   project_id?: string | null;
 
@@ -1034,8 +1035,17 @@ A task may have status:
 open
 in_progress
 blocked
+deferred
 done
 cancelled
+
+Use "deferred" when Kari explicitly says an existing task
+is "na później", "później", "nie teraz", "wrócimy do tego"
+or otherwise clearly postpones it without cancelling it.
+
+"Deferred" means the task is preserved but is NOT active now.
+
+When referring to an existing task, reuse its exact dedupe_key.
 
 Use "done" only when Kari explicitly says
 the task has been finished.
