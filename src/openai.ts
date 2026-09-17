@@ -1,4 +1,9 @@
 import {
+  getStoredResponseId,
+  saveStoredResponseId
+} from "./conversationState.js";
+
+import {
   runMorningLoop,
   runEveningLoop
 } from "./dailyLoop.js";
@@ -294,15 +299,18 @@ ${personalContext}
   // ==========================================================
 
   const previousResponseId =
-    previousResponseByConversation
-      .get(conversationId);
+  previousResponseByConversation
+    .get(conversationId) ??
+  await getStoredResponseId(
+    conversationId
+  );
 
 
-  // ==========================================================
-  // OPENAI RESPONSE
-  // ==========================================================
+// ==========================================================
+// OPENAI RESPONSE
+// ==========================================================
 
-  const request: any = {
+const request: any = {
 
   model:
     process.env.OPENAI_MODEL ||
@@ -323,24 +331,46 @@ ${personalContext}
 };
 
 
-  const response =
-    await client.responses.create(
-      request
+if (previousResponseId) {
+
+  request.previous_response_id =
+    previousResponseId;
+}
+
+
+const response =
+  await client.responses.create(
+    request
+  );
+
+
+// ==========================================================
+// REMEMBER RESPONSE CHAIN
+// ==========================================================
+
+if (response.id) {
+
+  previousResponseByConversation
+    .set(
+      conversationId,
+      response.id
     );
 
+  try {
 
-  // ==========================================================
-  // REMEMBER SHORT-TERM RESPONSE CHAIN
-  // ==========================================================
+    await saveStoredResponseId(
+      conversationId,
+      response.id
+    );
 
-  if (response.id) {
+  } catch (error) {
 
-    previousResponseByConversation
-      .set(
-        conversationId,
-        response.id
-      );
+    console.error(
+      "⚠️ Conversation state save failed:",
+      error
+    );
   }
+}
 
 
   // ==========================================================

@@ -1,9 +1,6 @@
 import "dotenv/config";
 
-import {
-  startDiscordBot,
-  sendProactiveDiscordMessage
-} from "./discord.js";
+import { startDiscordBot } from "./discord.js";
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error(
@@ -12,7 +9,3 @@ if (!process.env.OPENAI_API_KEY) {
 }
 
 await startDiscordBot();
-
-await sendProactiveDiscordMessage(
-  "Test proaktywnej wiadomości: mogę napisać pierwszy."
-);
