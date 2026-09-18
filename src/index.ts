@@ -1,6 +1,13 @@
 import "dotenv/config";
 
-import { startDiscordBot } from "./discord.js";
+import {
+  startDiscordBot
+} from "./discord.js";
+
+import {
+  startReminderWorker
+} from "./reminderWorker.js";
+
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error(
@@ -9,3 +16,5 @@ if (!process.env.OPENAI_API_KEY) {
 }
 
 await startDiscordBot();
+
+startReminderWorker();
