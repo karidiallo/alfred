@@ -1,4 +1,12 @@
 import {
+  parseReminderRequest
+} from "./reminderParser.js";
+
+import {
+  createReminder
+} from "./reminders.js";
+
+import {
   Client,
   Events,
   GatewayIntentBits,
@@ -93,6 +101,102 @@ function createClient() {
             ? `guild:${message.guild.id}:channel:${message.channel.id}`
             : `dm:${message.author.id}`;
 
+// --------------------------------------------
+// REMINDER REQUEST
+// --------------------------------------------
+
+const possibleReminder =
+  /\b(przypomnij|napisz mi za|daj mi znać|remind me)\b/i
+    .test(input);
+
+if (possibleReminder) {
+
+  const parsedReminder =
+    await parseReminderRequest(
+      input
+    );
+
+  if (
+    parsedReminder.is_reminder &&
+    parsedReminder.clarification_needed
+  ) {
+
+    await message.reply({
+      content:
+        parsedReminder.clarification_question ??
+        "Na kiedy mam ustawić przypomnienie?",
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  if (
+    parsedReminder.is_reminder &&
+    parsedReminder.due_at &&
+    parsedReminder.reminder_message
+  ) {
+
+    await createReminder({
+
+      message:
+        parsedReminder.reminder_message,
+
+      due_at:
+        parsedReminder.due_at,
+
+      channel_id:
+        message.channel.id,
+
+      metadata: {
+        source:
+          "discord_explicit_reminder",
+
+        original_message:
+          input,
+
+        conversation_id:
+          conversationId
+      }
+
+    });
+
+
+    const due =
+      new Date(
+        parsedReminder.due_at
+      );
+
+
+    await message.reply({
+      content:
+        `Jasne — przypomnę Ci: **${parsedReminder.reminder_message}** o ${due.toLocaleString(
+          "pl-PL",
+          {
+            timeZone:
+              process.env.ALFRED_TIMEZONE ||
+              "Europe/Warsaw",
+
+            dateStyle:
+              "medium",
+
+            timeStyle:
+              "short"
+          }
+        )}.`,
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+}
 
 // --------------------------------------------
 // EXPLICIT MEMORY REQUEST
