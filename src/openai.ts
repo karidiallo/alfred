@@ -205,7 +205,8 @@ explicitly asks what Alfred knows.
 
 export async function askAlfred(
   conversationId: string,
-  userMessage: string
+  userMessage: string,
+  turnContext?: string
 ): Promise<string> {
 
   const command =
@@ -290,6 +291,22 @@ ${CONTEXT_RULES}
 
 ${runtimeContext}
 
+${turnContext
+  ? `
+==================================================
+CURRENT TURN SYSTEM CONTEXT
+==================================================
+
+${turnContext}
+
+This context is authoritative for this turn.
+Do not contradict it.
+
+==================================================
+`
+  : ""
+}
+
 ${personalContext}
 `;
 
@@ -312,20 +329,6 @@ ${personalContext}
   const previousResponseId =
   cachedResponseId ??
   storedResponseId;
-
-  console.log(
-    "🧵 CONTINUITY:",
-        {
-        conversationId,
-        source:
-        cachedResponseId
-          ? "ram"
-        : storedResponseId
-          ? "supabase"
-          : "none",
-        previousResponseId
-  }
-);
 
 
 // ==========================================================

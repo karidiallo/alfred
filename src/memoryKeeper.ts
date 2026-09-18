@@ -640,14 +640,14 @@ function parseKeeperJson(
 
 export async function runMemoryKeeper(
   userMessage: string
-) {
+): Promise<boolean> {
 
   const message =
     userMessage.trim();
 
 
   if (!message) {
-    return;
+    return false;
   }
 
 
@@ -1438,7 +1438,7 @@ Prefer storing nothing over storing noise.
 
 
   if (!raw) {
-    return;
+    return false;
   }
 
   let result:
@@ -1460,8 +1460,20 @@ Prefer storing nothing over storing noise.
 
     console.error(raw);
 
-    return;
+    return false;
   }
+
+  const hasPersistableChanges =
+    result.profile_items.length > 0 ||
+    result.memories.length > 0 ||
+    result.current_state.length > 0 ||
+    result.decisions.length > 0 ||
+    result.tasks.length > 0 ||
+    result.commitments.length > 0 ||
+    result.ideas.length > 0 ||
+    result.outcomes.length > 0 ||
+    result.project_updates.length > 0 ||
+    result.goal_updates.length > 0;
 
   console.log(
     `🎛️ Interaction mode: ${result.interaction_mode}`
@@ -1799,7 +1811,6 @@ Prefer storing nothing over storing noise.
     ) {
       continue;
     }
-
 
     await saveCommitmentSafely({
 
@@ -2234,4 +2245,5 @@ if (
       `🎯 Goal updated: ${update.goal_id}`
     );
   }
+    return hasPersistableChanges;
 }

@@ -94,60 +94,123 @@ function createClient() {
             : `dm:${message.author.id}`;
 
 
-        // --------------------------------------------
-        // MAIN ALFRED RESPONSE
-        // --------------------------------------------
+// --------------------------------------------
+// EXPLICIT MEMORY REQUEST
+// --------------------------------------------
 
-        const answer =
-          await askAlfred(
-            conversationId,
-            input
-          );
+const explicitMemoryRequest =
+  /\b(zapamiętaj|zapamietaj|pamiętaj że|pamietaj ze|zapisz sobie|remember that)\b/i
+    .test(input);
 
-
-        // --------------------------------------------
-        // SEND RESPONSE TO DISCORD
-        // --------------------------------------------
-
-        for (
-          const chunk of
-          splitDiscordMessage(answer)
-        ) {
-          await message.reply({
-            content: chunk,
-
-            allowedMentions: {
-              repliedUser: false
-            }
-          });
-        }
+let memoryTurnContext:
+  string | undefined;
 
 
-        // --------------------------------------------
-        // MEMORY KEEPER
-        // --------------------------------------------
-        //
-        // Działa PO odpowiedzi Alfreda.
-        //
-        // Nie blokuje rozmowy.
-        // Analizuje wiadomość Kari
-        // i może zapisać:
-        //
-        // - memory
-        // - current state
-        // - decision
-        // - objective
-        //
-        // do Supabase.
-        // --------------------------------------------
+// Jeśli Kari WYRAŹNIE prosi o zapamiętanie,
+// zapis musi wydarzyć się PRZED odpowiedzią.
+if (explicitMemoryRequest) {
 
-        void runMemoryKeeper(input)
-          .catch(error => {
-            console.error(
-              "Memory Keeper error:",
-              error
-            );
-          });
+  try {
+
+    const persisted =
+      await runMemoryKeeper(input);
+
+    memoryTurnContext =
+      persisted
+        ? `
+The user explicitly asked you to remember information.
+
+Memory Keeper completed successfully and identified
+persistent information from this message.
+
+You may accurately confirm that the information was saved.
+Do not exaggerate what was saved.
+`
+        : `
+The user explicitly asked you to remember information.
+
+Memory Keeper completed, but no persistent structured
+information was saved from this message.
+
+DO NOT say:
+- "zapamiętane"
+- "zapisałem"
+- "mam to zapisane"
+
+Be transparent that you could not confirm a persistent save.
+`;
+
+  } catch (error) {
+
+    console.error(
+      "Explicit Memory Keeper error:",
+      error
+    );
+
+    memoryTurnContext = `
+The user explicitly asked you to remember information.
+
+The persistence operation FAILED for this turn.
+
+DO NOT claim that anything was saved or remembered persistently.
+Tell Kari briefly that the save did not succeed.
+`;
+  }
+}
+
+
+// --------------------------------------------
+// MAIN ALFRED RESPONSE
+// --------------------------------------------
+
+const answer =
+  await askAlfred(
+    conversationId,
+    input,
+    memoryTurnContext
+  );
+
+
+// --------------------------------------------
+// SEND RESPONSE TO DISCORD
+// --------------------------------------------
+
+for (
+  const chunk of
+  splitDiscordMessage(answer)
+) {
+  await message.reply({
+    content: chunk,
+
+    allowedMentions: {
+      repliedUser: false
+    }
+  });
+}
+
+
+// --------------------------------------------
+// BACKGROUND MEMORY KEEPER
+// --------------------------------------------
+//
+// Przy zwykłej rozmowie działa po odpowiedzi,
+// żeby nie spowalniać Alfreda.
+//
+// Przy explicit "zapamiętaj" został już
+// wykonany PRZED odpowiedzią.
+// --------------------------------------------
+
+if (!explicitMemoryRequest) {
+
+  void runMemoryKeeper(input)
+    .catch(error => {
+      console.error(
+        "Memory Keeper error:",
+        error
+      );
+    });
+}
+
 
       } catch (error) {
 
