@@ -298,12 +298,34 @@ ${personalContext}
   // SHORT-TERM THREAD CONTINUITY
   // ==========================================================
 
-  const previousResponseId =
+  const cachedResponseId =
   previousResponseByConversation
-    .get(conversationId) ??
-  await getStoredResponseId(
-    conversationId
-  );
+    .get(conversationId);
+
+  const storedResponseId =
+  cachedResponseId
+    ? null
+    : await getStoredResponseId(
+        conversationId
+      );
+
+  const previousResponseId =
+  cachedResponseId ??
+  storedResponseId;
+
+  console.log(
+    "🧵 CONTINUITY:",
+        {
+        conversationId,
+        source:
+        cachedResponseId
+          ? "ram"
+        : storedResponseId
+          ? "supabase"
+          : "none",
+        previousResponseId
+  }
+);
 
 
 // ==========================================================
