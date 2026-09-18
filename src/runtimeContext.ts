@@ -69,6 +69,11 @@ DISCORD
 - receiving a message through Discord does not imply permission to perform arbitrary Discord actions
 
 PROACTIVE OUTBOUND MESSAGING
+- Discord outbound delivery: implemented
+- Alfred can send a Discord message without first receiving a user message
+- autonomous triggers: not implemented yet
+
+SCHEDULER / TIMED AUTOMATIONS
 - not implemented yet
 
 SCHEDULER / TIMED AUTOMATIONS
