@@ -265,3 +265,51 @@ export async function rescheduleReminder(
 
   return data;
 }
+
+// ============================================================
+// RESCHEDULE RECURRING REMINDER
+// ============================================================
+
+export async function scheduleNextReminderOccurrence(
+  reminderId: string,
+  dueAt: string
+) {
+
+  const now =
+    new Date()
+      .toISOString();
+
+
+  const { data, error } =
+    await supabase
+      .from("reminders")
+      .update({
+        due_at:
+          dueAt,
+
+        status:
+          "scheduled",
+
+        last_sent_at:
+          now,
+
+        updated_at:
+          now
+      })
+      .eq(
+        "id",
+        reminderId
+      )
+      .select()
+      .single();
+
+
+  if (error) {
+    throw new Error(
+      `Nie udało się ustawić kolejnego wystąpienia reminder: ${error.message}`
+    );
+  }
+
+
+  return data;
+}

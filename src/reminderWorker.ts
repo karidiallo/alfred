@@ -4,7 +4,8 @@ import {
 
 import {
   getDueReminders,
-  markReminderSent
+  markReminderSent,
+  scheduleNextReminderOccurrence
 } from "./reminders.js";
 
 import {
@@ -18,6 +19,62 @@ import {
 
 let workerRunning = false;
 
+function getNextRecurringDueAt(
+  currentDueAt: string,
+  repeatRule: string
+): string {
+
+  const current =
+    new Date(currentDueAt);
+
+
+  if (
+    Number.isNaN(
+      current.getTime()
+    )
+  ) {
+    throw new Error(
+      `Invalid recurring due_at: ${currentDueAt}`
+    );
+  }
+
+
+  const next =
+    new Date(current);
+
+
+  if (
+    repeatRule === "daily"
+  ) {
+
+    next.setDate(
+      next.getDate() + 1
+    );
+
+    return next.toISOString();
+  }
+
+
+  const weeklyMatch =
+    repeatRule.match(
+      /^weekly:([1-7])$/
+    );
+
+
+  if (weeklyMatch) {
+
+    next.setDate(
+      next.getDate() + 7
+    );
+
+    return next.toISOString();
+  }
+
+
+  throw new Error(
+    `Unsupported repeat rule: ${repeatRule}`
+  );
+}
 
 async function processDueReminders() {
 
@@ -47,9 +104,33 @@ await sendProactiveDiscordMessage(
 );
 
 
-await markReminderSent(
-  reminder.id
-);
+if (
+  reminder.repeat_rule
+) {
+
+  const nextDueAt =
+    getNextRecurringDueAt(
+      reminder.due_at,
+      reminder.repeat_rule
+    );
+
+
+  await scheduleNextReminderOccurrence(
+    reminder.id,
+    nextDueAt
+  );
+
+
+  console.log(
+    `🔁 Recurring reminder rescheduled: ${reminder.id} → ${nextDueAt}`
+  );
+
+} else {
+
+  await markReminderSent(
+    reminder.id
+  );
+}
 
 
 if (targetChannelId) {

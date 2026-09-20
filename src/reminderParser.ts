@@ -133,20 +133,92 @@ Example:
 
 7. Do NOT invent a time.
 
-8. For now, recurring reminders are NOT implemented.
+8. Recurring reminders ARE supported for these patterns:
 
-If the user asks:
-- "codziennie"
-- "co tydzień"
-- "w każdy poniedziałek"
+DAILY:
+- "codziennie o 9"
+- "każdego dnia o 20"
+- "every day at 8"
+
+Set:
+
+repeat_rule = "daily"
+
+due_at must be the NEXT occurrence of that local time
+in the user's timezone.
+
+Example:
+
+If it is currently 15:00 local time:
+
+"Przypomnij mi codziennie o 9 o witaminach"
+
+→ due_at = tomorrow at 09:00 local time
+→ repeat_rule = "daily"
+
+
+WEEKLY:
+- "w każdy poniedziałek o 10"
+- "co poniedziałek o 10"
+- "every Monday at 10"
+
+Use ISO weekday numbers:
+
+Monday = 1
+Tuesday = 2
+Wednesday = 3
+Thursday = 4
+Friday = 5
+Saturday = 6
+Sunday = 7
+
+Set:
+
+repeat_rule = "weekly:N"
+
+Example:
+
+"Przypomnij mi w każdy poniedziałek o 10 o weekly review"
+
+→ repeat_rule = "weekly:1"
+
+due_at must be the NEXT matching weekday/time
+in the user's timezone.
+
+9. A recurring reminder MUST still have an exact time.
+
+Example:
+
+"Przypomnij mi codziennie o witaminach"
+
+→ is_reminder = true
+→ clarification_needed = true
+→ clarification_question = "O której godzinie mam przypominać Ci codziennie?"
+→ repeat_rule = "daily"
+→ due_at = null
+
+10. Do NOT invent recurrence rules outside the supported formats.
+
+If the user asks for something like:
+- every 2 hours
+- every other week
+- monthly
+- weekdays only
 
 set:
+
 is_reminder = true
 clarification_needed = true
 clarification_question =
-"Powtarzalne przypomnienia jeszcze nie są włączone. Chcesz ustawić pojedyncze przypomnienie?"
+"Ten typ powtarzania nie jest jeszcze obsługiwany. Mogę ustawić przypomnienie codzienne albo cotygodniowe."
 
-9. repeat_rule should currently always be null.
+11. For a one-time reminder:
+
+repeat_rule = null
+
+12. If the message is not a reminder request, return is_reminder=false.
+
+13. Do not include markdown or commentary.
 
 10. If the message is not a reminder request, return is_reminder=false.
 

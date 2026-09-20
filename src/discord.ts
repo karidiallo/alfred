@@ -675,6 +675,9 @@ if (shouldCheckReminder) {
       due_at:
         parsedReminder.due_at,
 
+      repeat_rule:
+        parsedReminder.repeat_rule,
+
       channel_id:
         message.channel.id,
 
