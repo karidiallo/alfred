@@ -1,4 +1,8 @@
 import {
+  saveLastSentReminder
+} from "./lastReminderState.js";
+
+import {
   getDueReminders,
   markReminderSent
 } from "./reminders.js";
@@ -32,15 +36,35 @@ async function processDueReminders() {
 
       try {
 
-        await sendProactiveDiscordMessage(
-          reminder.message,
-          reminder.channel_id ??
-          undefined
-        );
+        const targetChannelId =
+  reminder.channel_id ??
+  process.env.DISCORD_CHANNEL_ID;
 
-        await markReminderSent(
-          reminder.id
-        );
+
+await sendProactiveDiscordMessage(
+  reminder.message,
+  targetChannelId
+);
+
+
+await markReminderSent(
+  reminder.id
+);
+
+
+if (targetChannelId) {
+
+  await saveLastSentReminder(
+    targetChannelId,
+    {
+      id:
+        reminder.id,
+
+      message:
+        reminder.message
+    }
+  );
+}
 
         console.log(
           `⏰ Reminder sent: ${reminder.id}`
