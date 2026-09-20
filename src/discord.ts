@@ -1,4 +1,8 @@
 import {
+  getLastSentReminder
+} from "./lastReminderState.js";
+
+import {
   getPendingReminder,
   savePendingReminder,
   clearPendingReminder
@@ -110,7 +114,92 @@ function createClient() {
             ? `guild:${message.guild.id}:channel:${message.channel.id}`
             : `dm:${message.author.id}`;
 
-            // --------------------------------------------
+// --------------------------------------------
+// SNOOZE LAST REMINDER
+// --------------------------------------------
+
+const snoozeMatch =
+  input.match(
+    /\b(?:snooze|odłóż|odloz)\s+(?:na\s+)?(\d+)\s*(min|minut|minuty|m|h|godz|godzinę|godzine|godziny|godzin)\b/i
+  );
+
+
+if (snoozeMatch) {
+
+  const amount =
+    Number(
+      snoozeMatch[1]
+    );
+
+  const unit =
+    snoozeMatch[2]
+      .toLowerCase();
+
+
+  const lastReminder =
+    await getLastSentReminder(
+      message.channel.id
+    );
+
+
+  if (!lastReminder) {
+
+    await message.reply({
+      content:
+        "Nie mam ostatniego wysłanego przypomnienia, które mogę odłożyć.",
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  const isHours =
+    unit === "h" ||
+    unit.startsWith("godz");
+
+
+  const delayMs =
+    isHours
+      ? amount * 60 * 60 * 1000
+      : amount * 60 * 1000;
+
+
+  const newDueAt =
+    new Date(
+      Date.now() +
+      delayMs
+    );
+
+
+  await rescheduleReminder(
+    lastReminder.reminder_id,
+    newDueAt.toISOString()
+  );
+
+
+  const delayLabel =
+    isHours
+      ? `${amount} godz.`
+      : `${amount} min`;
+
+
+  await message.reply({
+    content:
+      `Jasne — odkładam **${lastReminder.message}** o ${delayLabel}.`,
+
+    allowedMentions: {
+      repliedUser: false
+    }
+  });
+
+  return;
+}
+
+// --------------------------------------------
 // RESCHEDULE REMINDER
 // --------------------------------------------
 
