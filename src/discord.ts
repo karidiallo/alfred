@@ -1,4 +1,10 @@
 import {
+  getPendingReminder,
+  savePendingReminder,
+  clearPendingReminder
+} from "./pendingReminderState.js";
+
+import {
   parseReminderRequest
 } from "./reminderParser.js";
 
@@ -105,21 +111,81 @@ function createClient() {
 // REMINDER REQUEST
 // --------------------------------------------
 
-const possibleReminder =
+const explicitReminderRequest =
   /\b(przypomnij|napisz mi za|daj mi znać|remind me)\b/i
     .test(input);
 
-if (possibleReminder) {
+const pendingReminder =
+  await getPendingReminder(
+    conversationId
+  );
+
+const reminderInput =
+  pendingReminder &&
+  !explicitReminderRequest
+    ? `${pendingReminder.original_message}
+
+Follow-up from Kari:
+${input}`
+    : input;
+
+const shouldCheckReminder =
+  explicitReminderRequest ||
+  Boolean(pendingReminder);
+
+
+if (shouldCheckReminder) {
+
+  // Allow cancelling an unfinished reminder
+  if (
+    pendingReminder &&
+    /\b(nieważne|niewazne|anuluj|cancel)\b/i
+      .test(input)
+  ) {
+
+    await clearPendingReminder(
+      conversationId
+    );
+
+    await message.reply({
+      content:
+        "Jasne — nie ustawiam tego przypomnienia.",
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
 
   const parsedReminder =
     await parseReminderRequest(
-      input
+      reminderInput
     );
+
+
+  // ------------------------------------------
+  // NEEDS MORE INFORMATION
+  // ------------------------------------------
 
   if (
     parsedReminder.is_reminder &&
     parsedReminder.clarification_needed
   ) {
+
+    await savePendingReminder(
+      conversationId,
+      {
+        reminder_message:
+          parsedReminder.reminder_message,
+
+        original_message:
+          pendingReminder?.original_message ??
+          input
+      }
+    );
 
     await message.reply({
       content:
@@ -134,6 +200,10 @@ if (possibleReminder) {
     return;
   }
 
+
+  // ------------------------------------------
+  // COMPLETE REMINDER
+  // ------------------------------------------
 
   if (
     parsedReminder.is_reminder &&
@@ -157,13 +227,20 @@ if (possibleReminder) {
           "discord_explicit_reminder",
 
         original_message:
+          pendingReminder?.original_message ??
           input,
 
         conversation_id:
           conversationId
       }
-
     });
+
+
+    if (pendingReminder) {
+      await clearPendingReminder(
+        conversationId
+      );
+    }
 
 
     const due =
