@@ -10,7 +10,8 @@ import {
 
 import {
   createReminder,
-  getScheduledReminders
+  getScheduledReminders,
+  cancelReminder
 } from "./reminders.js";
 
 import {
@@ -108,7 +109,124 @@ function createClient() {
             ? `guild:${message.guild.id}:channel:${message.channel.id}`
             : `dm:${message.author.id}`;
 
-            // --------------------------------------------
+// --------------------------------------------
+// CANCEL REMINDER
+// --------------------------------------------
+
+const cancelReminderMatch =
+  input.match(
+    /\b(?:anuluj|usuń|usun|odwołaj|odwolaj)\s+(?:mi\s+)?(?:przypomnienie|reminder)(?:\s+o)?\s*(.*)$/i
+  );
+
+if (cancelReminderMatch) {
+
+  const search =
+    cancelReminderMatch[1]
+      ?.trim();
+
+
+  if (!search) {
+
+    await message.reply({
+      content:
+        "Które przypomnienie mam anulować?",
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  const reminders =
+    await getScheduledReminders();
+
+
+  const normalize =
+    (value: string) =>
+      value
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLowerCase()
+        .trim();
+
+
+  const normalizedSearch =
+    normalize(search);
+
+
+  const matches =
+    reminders.filter(
+      reminder =>
+        normalize(
+          reminder.message
+        ).includes(
+          normalizedSearch
+        )
+    );
+
+
+  if (!matches.length) {
+
+    await message.reply({
+      content:
+        `Nie znalazłem aktywnego przypomnienia pasującego do **${search}**.`,
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  if (matches.length > 1) {
+
+    const lines =
+      matches.map(
+        (reminder, index) =>
+          `${index + 1}. ${reminder.message}`
+      );
+
+
+    await message.reply({
+      content:
+        `Mam kilka pasujących przypomnień:\n\n${lines.join("\n")}\n\nNapisz dokładniej, które mam anulować.`,
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  const reminder =
+    matches[0];
+
+
+  await cancelReminder(
+    reminder.id
+  );
+
+
+  await message.reply({
+    content:
+      `Anulowane — **${reminder.message}**.`,
+
+    allowedMentions: {
+      repliedUser: false
+    }
+  });
+
+  return;
+}
+
+// --------------------------------------------
 // LIST REMINDERS
 // --------------------------------------------
 
