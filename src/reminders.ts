@@ -220,3 +220,48 @@ export async function getScheduledReminders() {
 
   return data ?? [];
 }
+
+// ============================================================
+// RESCHEDULE REMINDER
+// ============================================================
+
+export async function rescheduleReminder(
+  reminderId: string,
+  dueAt: string
+) {
+
+  const now =
+    new Date()
+      .toISOString();
+
+
+  const { data, error } =
+    await supabase
+      .from("reminders")
+      .update({
+        due_at:
+          dueAt,
+
+        status:
+          "scheduled",
+
+        updated_at:
+          now
+      })
+      .eq(
+        "id",
+        reminderId
+      )
+      .select()
+      .single();
+
+
+  if (error) {
+    throw new Error(
+      `Nie udało się przesunąć reminder: ${error.message}`
+    );
+  }
+
+
+  return data;
+}

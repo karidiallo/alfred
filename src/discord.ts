@@ -11,7 +11,8 @@ import {
 import {
   createReminder,
   getScheduledReminders,
-  cancelReminder
+  cancelReminder,
+  rescheduleReminder
 } from "./reminders.js";
 
 import {
@@ -108,6 +109,176 @@ function createClient() {
           message.guild
             ? `guild:${message.guild.id}:channel:${message.channel.id}`
             : `dm:${message.author.id}`;
+
+            // --------------------------------------------
+// RESCHEDULE REMINDER
+// --------------------------------------------
+
+const rescheduleReminderMatch =
+  input.match(
+    /\b(?:przesuń|przesun|przełóż|przeloz)\s+(?:mi\s+)?(?:przypomnienie|reminder)(?:\s+o)?\s+(.+?)\s+na\s+(.+)$/i
+  );
+
+
+if (rescheduleReminderMatch) {
+
+  const search =
+    rescheduleReminderMatch[1]
+      ?.trim();
+
+  const newTime =
+    rescheduleReminderMatch[2]
+      ?.trim();
+
+
+  if (
+    !search ||
+    !newTime
+  ) {
+
+    await message.reply({
+      content:
+        "Napisz, które przypomnienie mam przesunąć i na kiedy.",
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  const reminders =
+    await getScheduledReminders();
+
+
+  const normalize =
+    (value: string) =>
+      value
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLowerCase()
+        .trim();
+
+
+  const normalizedSearch =
+    normalize(search);
+
+
+  const matches =
+    reminders.filter(
+      reminder =>
+        normalize(
+          reminder.message
+        ).includes(
+          normalizedSearch
+        )
+    );
+
+
+  if (!matches.length) {
+
+    await message.reply({
+      content:
+        `Nie znalazłem aktywnego przypomnienia pasującego do **${search}**.`,
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  if (matches.length > 1) {
+
+    const lines =
+      matches.map(
+        (reminder, index) =>
+          `${index + 1}. ${reminder.message}`
+      );
+
+
+    await message.reply({
+      content:
+        `Mam kilka pasujących przypomnień:\n\n${lines.join("\n")}\n\nNapisz dokładniej, które mam przesunąć.`,
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  const parsedTime =
+    await parseReminderRequest(
+      `Przypomnij mi o ${search} ${newTime}.`
+    );
+
+
+  if (
+    parsedTime.clarification_needed ||
+    !parsedTime.due_at
+  ) {
+
+    await message.reply({
+      content:
+        parsedTime.clarification_question ??
+        "Nie jestem pewien nowej daty lub godziny. Na kiedy mam przesunąć przypomnienie?",
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  const reminder =
+    matches[0];
+
+
+  await rescheduleReminder(
+    reminder.id,
+    parsedTime.due_at
+  );
+
+
+  const due =
+    new Date(
+      parsedTime.due_at
+    );
+
+
+  await message.reply({
+    content:
+      `Przesunięte — **${reminder.message}** na ${due.toLocaleString(
+        "pl-PL",
+        {
+          timeZone:
+            process.env.ALFRED_TIMEZONE ||
+            "Europe/Warsaw",
+
+          dateStyle:
+            "medium",
+
+          timeStyle:
+            "short"
+        }
+      )}.`,
+
+    allowedMentions: {
+      repliedUser: false
+    }
+  });
+
+  return;
+}
 
 // --------------------------------------------
 // CANCEL REMINDER
