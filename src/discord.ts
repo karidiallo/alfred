@@ -9,7 +9,8 @@ import {
 } from "./reminderParser.js";
 
 import {
-  createReminder
+  createReminder,
+  getScheduledReminders
 } from "./reminders.js";
 
 import {
@@ -106,6 +107,83 @@ function createClient() {
           message.guild
             ? `guild:${message.guild.id}:channel:${message.channel.id}`
             : `dm:${message.author.id}`;
+
+            // --------------------------------------------
+// LIST REMINDERS
+// --------------------------------------------
+
+const listRemindersRequest =
+  /\b(jakie mam (ustawione )?przypomnienia|pokaż (mi )?przypomnienia|pokaz (mi )?przypomnienia|lista przypomnień|lista przypomnien)\b/i
+    .test(input);
+
+if (listRemindersRequest) {
+
+  const reminders =
+    await getScheduledReminders();
+
+  if (!reminders.length) {
+
+    await message.reply({
+      content:
+        "Nie masz obecnie żadnych aktywnych przypomnień.",
+
+      allowedMentions: {
+        repliedUser: false
+      }
+    });
+
+    return;
+  }
+
+
+  const timezone =
+    process.env.ALFRED_TIMEZONE ||
+    "Europe/Warsaw";
+
+
+  const lines =
+    reminders.map(
+      (
+        reminder,
+        index
+      ) => {
+
+        const due =
+          new Date(
+            reminder.due_at
+          );
+
+        const formatted =
+          due.toLocaleString(
+            "pl-PL",
+            {
+              timeZone:
+                timezone,
+
+              dateStyle:
+                "medium",
+
+              timeStyle:
+                "short"
+            }
+          );
+
+        return `${index + 1}. **${reminder.message}** — ${formatted}`;
+      }
+    );
+
+
+  await message.reply({
+    content:
+      `Masz ustawione przypomnienia:\n\n${lines.join("\n")}`,
+
+    allowedMentions: {
+      repliedUser: false
+    }
+  });
+
+  return;
+}
 
 // --------------------------------------------
 // REMINDER REQUEST

@@ -188,3 +188,35 @@ export async function cancelReminder(
 
   return data;
 }
+
+// ============================================================
+// GET SCHEDULED REMINDERS
+// ============================================================
+
+export async function getScheduledReminders() {
+
+  const { data, error } =
+    await supabase
+      .from("reminders")
+      .select("*")
+      .eq(
+        "status",
+        "scheduled"
+      )
+      .order(
+        "due_at",
+        {
+          ascending: true
+        }
+      );
+
+
+  if (error) {
+    throw new Error(
+      `Nie udało się pobrać scheduled reminders: ${error.message}`
+    );
+  }
+
+
+  return data ?? [];
+}
